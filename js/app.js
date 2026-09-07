@@ -11,7 +11,7 @@ const el = {
   startOverlay: $('start-overlay'), btnStart: $('btn-start'),
   err: $('err'), errTitle: $('err-title'), errMsg: $('err-msg'), btnRetry: $('btn-retry'),
   selRes: $('sel-res'),
-  chkMirrorPreview: $('chk-mirror-preview'), chkMirrorSave: $('chk-mirror-save'),
+  chkMirrorPreview: $('chk-mirror-preview'),
   btnFlip: $('btn-flip'), btnShutter: $('btn-shutter'), btnStop: $('btn-stop'),
   preview: $('preview'), pvImg: $('pv-img'), pvScroll: $('pv-scroll'),
   pvInfo: $('pv-info'), btnBack: $('btn-back'), btnZoom: $('btn-zoom'),
@@ -181,12 +181,13 @@ async function capture() {
   // ここで一度だけ本来の解像度に切り替え、ぼかしも高い解像度でかけ直す。
   const vw = el.video.videoWidth, vh = el.video.videoHeight;
   const pw = renderer.width, ph = renderer.height, ps = renderer.blurScale;
-  const saveMirror = el.chkMirrorSave.checked;
 
   renderer.resize(vw, vh, blurScaleFor(vw, vh, CAPTURE_BLUR_TARGET));
+  // 保存は常に実際の向き（鏡像にしない）。純正カメラと同じ挙動で、
+  // 写り込んだ文字も鏡文字にならない。プレビューだけを鏡像で見せている。
   renderer.draw(el.video, {
     ...state.params,
-    flipX: saveMirror,
+    flipX: false,
     bypass: state.preset === 'off',
   });
 
@@ -372,7 +373,6 @@ function persist() {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       preset: state.preset, params: state.params, my: state.my,
       mirrorPreview: el.chkMirrorPreview.checked,
-      mirrorSave: el.chkMirrorSave.checked,
       res: el.selRes.value,
     }));
   } catch (_) { /* 保存できない環境でも動作には支障がないので無視する */ }
@@ -386,7 +386,6 @@ function restore() {
     if (d.params) state.params = { ...DEFAULT_PARAMS, ...d.params };
     if (d.preset) state.preset = d.preset;
     if (typeof d.mirrorPreview === 'boolean') el.chkMirrorPreview.checked = d.mirrorPreview;
-    if (typeof d.mirrorSave === 'boolean') el.chkMirrorSave.checked = d.mirrorSave;
     if (d.res && RES[d.res]) el.selRes.value = d.res;
   }
   syncPresetButtons();
@@ -425,7 +424,6 @@ el.btnTuneSave.addEventListener('click', () => {
 });
 
 el.chkMirrorPreview.addEventListener('change', persist);
-el.chkMirrorSave.addEventListener('change', persist);
 
 // 画面を長押ししている間だけ補正前を表示して見比べられるようにする
 let pressTimer = null;
