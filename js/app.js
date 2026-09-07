@@ -19,7 +19,7 @@ const el = {
   presets: $('presets'), btnPresetMy: $('btn-preset-my'), hint: $('hint'),
   tune: $('tune'), btnTuneOpen: $('btn-tune-open'), btnTuneClose: $('btn-tune-close'),
   btnTuneReset: $('btn-tune-reset'), btnTuneSave: $('btn-tune-save'), chkMask: $('chk-mask'),
-  diag: $('diag'), chkDiag: $('chk-diag'),
+  diag: $('diag'), chkDiag: $('chk-diag'), chkQuick: $('chk-quick'),
 };
 
 // 要求する解像度。実際に返る値は端末とブラウザ次第なので必ず表示して確認する。
@@ -48,13 +48,14 @@ const PRESETS = {
 };
 
 // プリセットの数値を変えたので、保存済みの旧設定は読み込まないようキーを上げる
-const STORE_KEY = 'beautycam.v6';
+const STORE_KEY = 'beautycam.v7';
 
 const state = {
   stream: null,
   track: null,
   facing: 'user',      // 'user' = インカメラ / 'environment' = アウトカメラ
   running: false,
+  camOk: false,       // 一度でもカメラを開けたか。次回の自動起動の判断に使う
   rafId: null,
   frames: 0,
   lastFpsAt: 0,
@@ -86,7 +87,9 @@ const renderer = new Renderer(el.canvas);
 
 /* ---------------- カメラ ---------------- */
 
-async function startCamera() {
+// auto = true は「ボタンを押さずに試している」状態。
+// 断られてもエラー画面は出さず、起動ボタンに戻すだけにする。
+async function startCamera({ auto = false } = {}) {
   stopCamera();
   setState('起動中…');
 
@@ -109,14 +112,14 @@ async function startCamera() {
       if (e.name === 'NotAllowedError' || e.name === 'SecurityError') break;
     }
   }
-  if (!stream) { showError(lastErr); return; }
+  if (!stream) { auto ? showStart() : showError(lastErr); return; }
 
   state.stream = stream;
   state.track = stream.getVideoTracks()[0];
   el.video.srcObject = stream;
 
   try { await el.video.play(); }
-  catch (e) { showError(e); return; }
+  catch (e) { auto ? showStart() : showError(e); return; }
 
   await waitForVideoSize();
 
@@ -134,6 +137,33 @@ async function startCamera() {
   state.frames = 0;
   state.lastFpsAt = performance.now();
   loop();
+
+  // 一度開けたので、次回からはボタンを挟まずに試してよい
+  if (!state.camOk) { state.camOk = true; persist(); }
+}
+
+function showStart() {
+  stopCamera();
+  setState('待機中');
+  el.err.classList.add('hidden');
+  el.startOverlay.classList.remove('hidden');
+}
+
+// 2回目以降はボタンを押さずにカメラを開く。
+//
+// getUserMedia はユーザー操作を要求されることがあり、その場合は失敗する。
+// 失敗したら起動ボタンに戻すだけなので、試すこと自体に副作用はない。
+async function tryAutoStart() {
+  let perm = null;
+  try {
+    const st = await navigator.permissions?.query({ name: 'camera' });
+    if (st) perm = st.state;
+  } catch (_) {
+    // Safari は camera を照会できない。過去に開けた記録の方で判断する。
+  }
+  if (perm === 'denied') return;                       // 明示的に拒否されている
+  if (perm !== 'granted' && !state.camOk) return;      // 初回は必ずボタンから
+  await startCamera({ auto: true });
 }
 
 // videoWidth が 0 のまま描画すると真っ黒になるので、確定するまで待つ
@@ -211,6 +241,15 @@ async function capture() {
     `${state.shot.w}×${state.shot.h} / ${(blob.size / 1024 / 1024).toFixed(2)} MB / JPEG 95%`;
   el.pvScroll.classList.remove('actual');
   el.btnZoom.textContent = '等倍で見る';
+
+  // 「撮ったらすぐ保存」がオンなら、プレビューを挟まずに保存へ進む。
+  // 保存しきれなかった場合（iOS で共有シートが弾かれた、ユーザーがやめた）は
+  // 今までどおりプレビューを見せるので、撮った写真を取りこぼすことはない。
+  if (el.chkQuick.checked && (await storeShot()) === 'ok') {
+    toast(IS_IOS ? '保存しました' : 'Download フォルダに保存しました');
+    return;
+  }
+
   el.preview.classList.remove('hidden');
 }
 
@@ -221,21 +260,21 @@ async function capture() {
 const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-// 保存も共有も、必ずボタンのタップから直接呼ぶ。
-// iOS は共有シートをタップ直後にしか開けず、撮影処理を挟むと弾かれるため。
-async function save() {
-  if (!state.shot) return;
+// 写真を端末に残す。戻り値は 'ok' | 'cancel' | 'blocked'。
+//
+// iOS は共有シートをタップ直後にしか開けない。撮影処理を挟むと弾かれるので、
+// その場合は 'blocked' を返して呼び出し側にプレビューを出させる。
+async function storeShot() {
   const name = `selfie_${timestamp()}.jpg`;
 
   if (IS_IOS) {
     const file = new File([state.shot.blob], name, { type: 'image/jpeg' });
-    if (navigator.canShare?.({ files: [file] })) {
-      try { await navigator.share({ files: [file] }); return; }
-      catch (e) { if (e.name === 'AbortError') return; }
-    }
+    if (!navigator.canShare?.({ files: [file] })) return 'blocked';
+    try { await navigator.share({ files: [file] }); return 'ok'; }
+    catch (e) { return e.name === 'AbortError' ? 'cancel' : 'blocked'; }
   }
 
-  // ダウンロード（Android の本命。iOS でも共有が使えなければここに落ちる）
+  // ダウンロード（Android の本命）
   try {
     const a = document.createElement('a');
     a.href = state.shot.url;
@@ -243,13 +282,19 @@ async function save() {
     document.body.appendChild(a);
     a.click();
     a.remove();
-    toast(IS_IOS ? 'ファイルに保存しました' : 'Download フォルダに保存しました');
-    return;
-  } catch (_) { /* 最後の手段へ */ }
+    return 'ok';
+  } catch (_) { return 'blocked'; }
+}
 
-  // 最後の手段：新しいタブで開いて長押し保存
-  window.open(state.shot.url, '_blank');
-  toast('画像を長押しして「画像を保存」を選んでください');
+async function save() {
+  if (!state.shot) return;
+  const r = await storeShot();
+  if (r === 'ok' && !IS_IOS) toast('Download フォルダに保存しました');
+  if (r === 'blocked') {
+    // 最後の手段：新しいタブで開いて長押し保存
+    window.open(state.shot.url, '_blank');
+    toast('画像を長押しして「画像を保存」を選んでください');
+  }
 }
 
 // 共有シートを開く（他アプリへ送りたいとき用。保存とは別物）
@@ -382,6 +427,8 @@ function persist() {
       mirrorPreview: el.chkMirrorPreview.checked,
       res: el.selRes.value,
       diag: el.chkDiag.checked,
+      quick: el.chkQuick.checked,
+      camOk: state.camOk,
     }));
   } catch (_) { /* 保存できない環境でも動作には支障がないので無視する */ }
 }
@@ -396,6 +443,8 @@ function restore() {
     if (typeof d.mirrorPreview === 'boolean') el.chkMirrorPreview.checked = d.mirrorPreview;
     if (d.res && RES[d.res]) el.selRes.value = d.res;
     if (typeof d.diag === 'boolean') el.chkDiag.checked = d.diag;
+    if (typeof d.quick === 'boolean') el.chkQuick.checked = d.quick;
+    if (typeof d.camOk === 'boolean') state.camOk = d.camOk;
   }
   syncDiag();
   syncPresetButtons();
@@ -440,6 +489,14 @@ function syncDiag() {
   el.diag.classList.toggle('hidden', !el.chkDiag.checked);
 }
 el.chkDiag.addEventListener('change', () => { syncDiag(); persist(); });
+el.chkQuick.addEventListener('change', persist);
+
+// iOS では「保存」も共有シートを開くので「共有」と実質同じ動作になる。
+// 同じものが2つ並ぶと分かりにくいので、1つにまとめる。
+if (IS_IOS) {
+  el.btnShare.hidden = true;
+  el.btnSave.textContent = '保存・共有';
+}
 
 // 画面を長押ししている間だけ補正前を表示して見比べられるようにする
 let pressTimer = null;
@@ -475,4 +532,5 @@ el.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   }
   restore();
   setState('待機中');
+  tryAutoStart();
 })();
