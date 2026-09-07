@@ -22,7 +22,7 @@
 
 <div id="app">
 
-  <div id="diag">
+  <div id="diag" class="hidden">
     <div><b>状態</b><span id="d-state">未起動</span></div>
     <div><b>解像度</b><span id="d-res">—</span></div>
     <div><b>FPS</b><span id="d-fps">—</span></div>
@@ -53,6 +53,18 @@
         <label class="chk"><input type="checkbox" id="chk-mask"><span>肌の判定を見る</span></label>
         <button id="btn-tune-close">閉じる</button>
       </div>
+      <div class="tune-opts">
+        <label>解像度
+          <select id="sel-res">
+            <option value="max">最大</option>
+            <option value="fhd" selected>フルHD</option>
+            <option value="hd">HD</option>
+          </select>
+        </label>
+        <label class="chk"><input type="checkbox" id="chk-mirror-preview" checked><span>鏡像で表示</span></label>
+        <label class="chk"><input type="checkbox" id="chk-diag"><span>診断バー</span></label>
+      </div>
+
       <div class="tune-body">
         <label><span>肌なめらか</span><input type="range" data-p="smooth"     min="0"  max="1"  step="0.01"><output></output></label>
         <label><span>質感を残す</span><input type="range" data-p="detail"     min="0"  max="1"  step="0.01"><output></output></label>
@@ -71,26 +83,17 @@
   </div>
 
   <div id="controls">
-    <div class="row presets" id="presets">
-      <button data-preset="off">オフ</button>
-      <button data-preset="light">ひかえめ</button>
-      <button data-preset="natural">ナチュラル</button>
-      <button data-preset="strong">しっかり</button>
-      <button data-preset="fair">色白</button>
-      <button data-preset="warm">血色</button>
-      <button data-preset="my" id="btn-preset-my" hidden>マイ設定</button>
-    </div>
-
-    <div class="row opts">
+    <div class="row presets-row">
+      <div id="presets">
+        <button data-preset="off">オフ</button>
+        <button data-preset="light">ひかえめ</button>
+        <button data-preset="natural">ナチュラル</button>
+        <button data-preset="strong">しっかり</button>
+        <button data-preset="fair">色白</button>
+        <button data-preset="warm">血色</button>
+        <button data-preset="my" id="btn-preset-my" hidden>マイ設定</button>
+      </div>
       <button id="btn-tune-open" class="tiny">調整</button>
-      <label>解像度
-        <select id="sel-res">
-          <option value="max">最大</option>
-          <option value="fhd" selected>フルHD</option>
-          <option value="hd">HD</option>
-        </select>
-      </label>
-      <label class="chk"><input type="checkbox" id="chk-mirror-preview" checked><span>鏡像で表示</span></label>
     </div>
 
     <div class="row main">

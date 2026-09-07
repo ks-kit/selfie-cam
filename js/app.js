@@ -19,6 +19,7 @@ const el = {
   presets: $('presets'), btnPresetMy: $('btn-preset-my'), hint: $('hint'),
   tune: $('tune'), btnTuneOpen: $('btn-tune-open'), btnTuneClose: $('btn-tune-close'),
   btnTuneReset: $('btn-tune-reset'), btnTuneSave: $('btn-tune-save'), chkMask: $('chk-mask'),
+  diag: $('diag'), chkDiag: $('chk-diag'),
 };
 
 // 要求する解像度。実際に返る値は端末とブラウザ次第なので必ず表示して確認する。
@@ -374,6 +375,7 @@ function persist() {
       preset: state.preset, params: state.params, my: state.my,
       mirrorPreview: el.chkMirrorPreview.checked,
       res: el.selRes.value,
+      diag: el.chkDiag.checked,
     }));
   } catch (_) { /* 保存できない環境でも動作には支障がないので無視する */ }
 }
@@ -387,7 +389,9 @@ function restore() {
     if (d.preset) state.preset = d.preset;
     if (typeof d.mirrorPreview === 'boolean') el.chkMirrorPreview.checked = d.mirrorPreview;
     if (d.res && RES[d.res]) el.selRes.value = d.res;
+    if (typeof d.diag === 'boolean') el.chkDiag.checked = d.diag;
   }
+  syncDiag();
   syncPresetButtons();
   syncSliders();
 }
@@ -424,6 +428,12 @@ el.btnTuneSave.addEventListener('click', () => {
 });
 
 el.chkMirrorPreview.addEventListener('change', persist);
+
+// 診断バーは開発用の情報なので既定では出さない。画面を広く使うため。
+function syncDiag() {
+  el.diag.classList.toggle('hidden', !el.chkDiag.checked);
+}
+el.chkDiag.addEventListener('change', () => { syncDiag(); persist(); });
 
 // 画面を長押ししている間だけ補正前を表示して見比べられるようにする
 let pressTimer = null;
