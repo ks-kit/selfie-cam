@@ -35,17 +35,20 @@ const RES = {
 //
 // detail（質感の戻し量）は 2026-09-07 に引き上げた。肌マスクを締めた分、
 // ぼかしが肌に集中するようになったため、以前の低い値では肌がのっぺりしすぎる。
+//
+// shadow（髭・くま）は実機で詰めて 0.10 に落ち着いた。当初 0.40 では顔が平坦になり、
+// 自然な陰影を守る仕組みを入れたあとでも 0.30 はまだ強かった。効かせすぎない方が良い。
 const PRESETS = {
   off:     { smooth: 0.00, detail: 0.45, brightness: 0.00, contrast: 0.00, saturation:  0.00, warmth:  0.00, skinTone: 0.00, shadow: 0.00, even: 0.00, radius:  6 },
-  light:   { smooth: 0.55, detail: 0.60, brightness: 0.06, contrast: 0.02, saturation:  0.02, warmth:  0.02, skinTone: 0.10, shadow: 0.15, even: 0.10, radius:  6 },
-  natural: { smooth: 0.85, detail: 0.48, brightness: 0.11, contrast: 0.03, saturation:  0.03, warmth:  0.03, skinTone: 0.18, shadow: 0.30, even: 0.18, radius:  8 },
-  strong:  { smooth: 1.00, detail: 0.34, brightness: 0.15, contrast: 0.04, saturation:  0.05, warmth:  0.04, skinTone: 0.28, shadow: 0.50, even: 0.32, radius: 11 },
-  fair:    { smooth: 0.88, detail: 0.48, brightness: 0.20, contrast: 0.02, saturation: -0.04, warmth: -0.08, skinTone: 0.38, shadow: 0.35, even: 0.20, radius:  8 },
-  warm:    { smooth: 0.88, detail: 0.48, brightness: 0.12, contrast: 0.03, saturation:  0.14, warmth:  0.20, skinTone: 0.22, shadow: 0.30, even: 0.20, radius:  8 },
+  light:   { smooth: 0.55, detail: 0.60, brightness: 0.06, contrast: 0.02, saturation:  0.02, warmth:  0.02, skinTone: 0.10, shadow: 0.06, even: 0.10, radius:  6 },
+  natural: { smooth: 0.85, detail: 0.48, brightness: 0.11, contrast: 0.03, saturation:  0.03, warmth:  0.03, skinTone: 0.18, shadow: 0.10, even: 0.18, radius:  8 },
+  strong:  { smooth: 1.00, detail: 0.34, brightness: 0.15, contrast: 0.04, saturation:  0.05, warmth:  0.04, skinTone: 0.28, shadow: 0.18, even: 0.32, radius: 11 },
+  fair:    { smooth: 0.88, detail: 0.48, brightness: 0.20, contrast: 0.02, saturation: -0.04, warmth: -0.08, skinTone: 0.38, shadow: 0.12, even: 0.20, radius:  8 },
+  warm:    { smooth: 0.88, detail: 0.48, brightness: 0.12, contrast: 0.03, saturation:  0.14, warmth:  0.20, skinTone: 0.22, shadow: 0.10, even: 0.20, radius:  8 },
 };
 
 // プリセットの数値を変えたので、保存済みの旧設定は読み込まないようキーを上げる
-const STORE_KEY = 'beautycam.v5';
+const STORE_KEY = 'beautycam.v6';
 
 const state = {
   stream: null,
