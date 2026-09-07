@@ -194,6 +194,41 @@ button.tiny { padding: 6px 12px; font-size: 12px; }
   text-shadow: 0 2px 24px rgba(0,0,0,.6);
 }
 
+/* ---- 色味フィルター ---- */
+#btn-look {
+  position: absolute; left: 12px; top: 12px;
+  padding: 7px 13px; font-size: 12px; border-radius: 16px;
+  background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.28); color: #ddd;
+  z-index: 6;
+}
+#btn-look.on { background: #0a7ea4; border-color: #0a7ea4; color: #fff; font-weight: 600; }
+
+#looks {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 10px 10px 12px;
+  background: linear-gradient(to top, rgba(0,0,0,.82), rgba(0,0,0,.45));
+  z-index: 7;
+}
+#looks.hidden { display: none; }
+#look-list {
+  display: flex; gap: 6px; overflow-x: auto;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+#look-list::-webkit-scrollbar { display: none; }
+#look-list button {
+  flex: 0 0 auto;
+  padding: 8px 13px; font-size: 12px; border-radius: 16px;
+  background: rgba(40,40,40,.9); border-color: #444; color: #bbb;
+}
+#look-list button.on { background: #0a7ea4; border-color: #0a7ea4; color: #fff; font-weight: 600; }
+#look-amt {
+  display: grid; grid-template-columns: 2.6em 1fr 2.6em;
+  align-items: center; gap: 8px;
+  margin-top: 8px; font-size: 12px; color: #ccc;
+}
+#look-amt input[type=range] { width: 100%; accent-color: #0a7ea4; height: 24px; }
+#look-amt output { font-size: 12px; color: #4fd1c5; text-align: right; font-variant-numeric: tabular-nums; }
+
 /* ---- 直前に撮った一枚 ---- */
 #thumb {
   position: absolute; left: 12px; bottom: 12px;

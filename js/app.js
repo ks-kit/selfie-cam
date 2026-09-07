@@ -22,6 +22,7 @@ const el = {
   diag: $('diag'), chkDiag: $('chk-diag'), chkQuick: $('chk-quick'),
   btnTimer: $('btn-timer'), countdown: $('countdown'), cdNum: $('cd-num'),
   thumb: $('thumb'), thumbImg: $('thumb-img'),
+  btnLook: $('btn-look'), looks: $('looks'), lookList: $('look-list'), lookAmount: $('look-amount'),
 };
 
 // 要求する解像度。実際に返る値は端末とブラウザ次第なので必ず表示して確認する。
@@ -50,7 +51,7 @@ const PRESETS = {
 };
 
 // プリセットの数値を変えたので、保存済みの旧設定は読み込まないようキーを上げる
-const STORE_KEY = 'beautycam.v8';
+const STORE_KEY = 'beautycam.v9';
 
 const state = {
   stream: null,
@@ -59,6 +60,8 @@ const state = {
   running: false,
   camOk: false,       // 一度でもカメラを開けたか。次回の自動起動の判断に使う
   timer: 0,           // セルフタイマーの秒数。0 はオフ
+  look: 0,            // 色味フィルター。0 はなし
+  lookAmount: 1.0,    // 色味の強さ
   rafId: null,
   frames: 0,
   lastFpsAt: 0,
@@ -197,9 +200,11 @@ function loop() {
   if (el.video.readyState >= 2) {
     renderer.draw(el.video, {
       ...state.params,
+      look: state.look, lookAmount: state.lookAmount,
       flipX: el.chkMirrorPreview.checked,
       maskOnly: el.chkMask.checked,
-      bypass: state.comparing || state.preset === 'off',
+      // 美顔がオフでも色味だけは効かせたいので、両方オフのときだけ素通しにする
+      bypass: state.comparing || (state.preset === 'off' && state.look === 0),
     });
     state.frames++;
   }
@@ -228,8 +233,9 @@ async function capture() {
   // 写り込んだ文字も鏡文字にならない。プレビューだけを鏡像で見せている。
   renderer.draw(el.video, {
     ...state.params,
+    look: state.look, lookAmount: state.lookAmount,
     flipX: false,
-    bypass: state.preset === 'off',
+    bypass: state.preset === 'off' && state.look === 0,
   });
 
   let blob;
@@ -361,6 +367,41 @@ function showError(e) {
   el.err.classList.remove('hidden');
 }
 
+/* ---------------- 色味フィルター ---------------- */
+
+const LOOK_NAMES = ['色味', 'フィルム', 'クリア', 'やわらか', 'ノスタルジー', 'クール', 'モノクロ'];
+
+function syncLook() {
+  el.btnLook.textContent = LOOK_NAMES[state.look] || '色味';
+  el.btnLook.classList.toggle('on', state.look > 0);
+  el.lookList.querySelectorAll('button[data-look]').forEach((b) => {
+    b.classList.toggle('on', Number(b.dataset.look) === state.look);
+  });
+  el.lookAmount.value = state.lookAmount;
+  el.lookAmount.nextElementSibling.value = fmtVal(state.lookAmount);
+  // 「なし」のときは強さをいじっても意味がないので触れなくする
+  el.lookAmount.disabled = state.look === 0;
+}
+
+el.btnLook.addEventListener('click', () => {
+  el.looks.classList.toggle('hidden');
+  el.thumb.classList.add('hidden');   // 一覧と重なるので引っ込める
+});
+
+el.lookList.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-look]');
+  if (!b) return;
+  state.look = Number(b.dataset.look);
+  syncLook();
+  persist();
+});
+
+el.lookAmount.addEventListener('input', () => {
+  state.lookAmount = parseFloat(el.lookAmount.value);
+  el.lookAmount.nextElementSibling.value = fmtVal(state.lookAmount);
+});
+el.lookAmount.addEventListener('change', persist);
+
 /* ---------------- 直前の一枚 ---------------- */
 
 // 出しっぱなしにせず、しばらくしたら消す。
@@ -431,6 +472,7 @@ el.btnTimer.addEventListener('click', () => {
 el.startOverlay.addEventListener('click', () => startCamera());
 el.btnRetry.addEventListener('click', () => startCamera());
 el.btnShutter.addEventListener('click', () => {
+  el.looks.classList.add('hidden');                    // 一覧が出たままだと画が隠れる
   if (cdId) { cancelCountdown(); return; }              // 秒読み中なら中止
   if (state.timer > 0 && state.running) { startCountdown(); return; }
   capture();
@@ -518,6 +560,8 @@ function persist() {
       quick: el.chkQuick.checked,
       camOk: state.camOk,
       timer: state.timer,
+      look: state.look,
+      lookAmount: state.lookAmount,
     }));
   } catch (_) { /* 保存できない環境でも動作には支障がないので無視する */ }
 }
@@ -535,11 +579,14 @@ function restore() {
     if (typeof d.quick === 'boolean') el.chkQuick.checked = d.quick;
     if (typeof d.camOk === 'boolean') state.camOk = d.camOk;
     if (TIMERS.includes(d.timer)) state.timer = d.timer;
+    if (Number.isInteger(d.look) && d.look >= 0 && d.look < LOOK_NAMES.length) state.look = d.look;
+    if (typeof d.lookAmount === 'number') state.lookAmount = d.lookAmount;
   }
   syncDiag();
   syncPresetButtons();
   syncSliders();
   syncTimerButton();
+  syncLook();
 }
 
 function showHint() {

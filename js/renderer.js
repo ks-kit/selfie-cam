@@ -27,6 +27,8 @@ export const DEFAULT_PARAMS = {
   skinTone: 0.0,
   shadow: 0.0,      // 髭・くま・くすみの持ち上げ
   even: 0.0,        // 色ムラの平均化
+  look: 0,          // 色味フィルターの種類（0 = なし）
+  lookAmount: 1.0,  // その強さ
   radius: 6.0,      // ぼかし半径（低解像度側の画素数）
   // 同じ肌とみなす色の差。0.16 では色差 0.16 の画素にもまだ 0.61 の重みが残り、
   // 眉毛と肌の境目のような中くらいの輪郭を越えて混ざっていた。
@@ -73,7 +75,8 @@ export class Renderer {
       ['u_tex', 'u_texel', 'u_dir', 'u_radius']);
     this.prog.composite = this._program(VERT_QUAD,   FRAG_COMPOSITE,
       ['u_orig', 'u_blur', 'u_base', 'u_smooth', 'u_detail', 'u_brightness', 'u_contrast',
-       'u_saturation', 'u_warmth', 'u_skinTone', 'u_shadow', 'u_even', 'u_maskOnly']);
+       'u_saturation', 'u_warmth', 'u_skinTone', 'u_shadow', 'u_even',
+       'u_look', 'u_lookAmount', 'u_maskOnly']);
 
     // 画面全体を覆う三角形2枚。全パスで使い回す。
     this.vao = gl.createVertexArray();
@@ -288,6 +291,8 @@ export class Renderer {
     gl.uniform1f(cp.u.u_skinTone,   p.skinTone);
     gl.uniform1f(cp.u.u_shadow,     p.shadow);
     gl.uniform1f(cp.u.u_even,       p.even);
+    gl.uniform1f(cp.u.u_look,       p.look);
+    gl.uniform1f(cp.u.u_lookAmount, p.lookAmount);
     gl.uniform1f(cp.u.u_maskOnly,   params.maskOnly ? 1.0 : 0.0);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }

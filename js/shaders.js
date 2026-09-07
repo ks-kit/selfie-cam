@@ -168,6 +168,8 @@ uniform float u_skinTone;    // 肌の明るさ      -1..1
 uniform sampler2D u_base;    // 周囲の肌の平均色（rgb は肌マスクで重み付け済み、a が重み）
 uniform float u_shadow;      // 髭・くまの持ち上げ 0..1
 uniform float u_even;        // 色ムラの平均化     0..1
+uniform float u_look;        // 色味フィルターの種類（0 = なし）
+uniform float u_lookAmount;  // その強さ 0..1
 uniform float u_maskOnly;    // 1.0 で肌マスクを可視化（調整用）
 out vec4 fragColor;
 ${SKIN_GLSL}
@@ -180,6 +182,51 @@ const float LIFT_MAX = 0.20;
 // 素直に持ち上げると顔から立体感が消えて平べったくなる。
 // この量までの暗さは陰影とみなして手を付けず、それを超えた分だけを戻す。
 const float SHADE_KEEP = 0.05;
+
+// 色味フィルター。
+//
+// LUT 画像ではなく式で書いてある。作るのが手作りの数本なら、
+// 式の方が軽く（画像の追加取得が無い）、値を直して push すればすぐ確かめられる。
+// 外部の .cube LUT を読み込みたくなったら、そのときサンプラーを足せばよい。
+//
+// 中身はどれも同じ4つの操作の組み合わせ:
+//   fade  黒を持ち上げる（フィルムの褪せた感じ）
+//   tint  暗部と明部に別々の色を乗せる（スプリットトーン）
+//   con   コントラスト
+//   sat   彩度
+vec3 applyLook(vec3 c, float id, float amt) {
+  if (id < 0.5 || amt <= 0.001) return c;
+
+  vec3 sTint, hTint;
+  float sat, con, fade;
+
+  if (id < 1.5) {        // フィルム: 褪せた黒、暖かいハイライト、冷たいシャドウ
+    sTint = vec3(-0.020, -0.005,  0.045); hTint = vec3( 0.045,  0.020, -0.030);
+    sat = -0.10; con =  0.06; fade = 0.030;
+  } else if (id < 2.5) { // クリア: 締まった、わずかに寒色
+    sTint = vec3(-0.010,  0.000,  0.020); hTint = vec3( 0.010,  0.015,  0.020);
+    sat =  0.10; con =  0.14; fade = 0.000;
+  } else if (id < 3.5) { // やわらか: 低コントラストで暖かい
+    sTint = vec3( 0.020,  0.010,  0.000); hTint = vec3( 0.035,  0.020,  0.000);
+    sat = -0.06; con = -0.10; fade = 0.050;
+  } else if (id < 4.5) { // ノスタルジー: セピア寄り
+    sTint = vec3( 0.030,  0.005, -0.010); hTint = vec3( 0.060,  0.035, -0.020);
+    sat = -0.30; con =  0.02; fade = 0.045;
+  } else if (id < 5.5) { // クール: 青寄りで締まった
+    sTint = vec3(-0.020, -0.005,  0.050); hTint = vec3(-0.010,  0.005,  0.035);
+    sat =  0.06; con =  0.10; fade = 0.000;
+  } else {               // モノクロ: わずかに暖かい黒白
+    sTint = vec3( 0.000,  0.000,  0.000); hTint = vec3( 0.020,  0.012,  0.000);
+    sat = -1.00; con =  0.12; fade = 0.020;
+  }
+
+  vec3 o = vec3(fade) + c * (1.0 - fade);
+  o += mix(sTint, hTint, smoothstep(0.0, 1.0, luma(o)));
+  o = (o - 0.5) * (1.0 + con) + 0.5;
+  o = mix(vec3(luma(o)), o, 1.0 + sat);
+
+  return mix(c, clamp(o, 0.0, 1.0), clamp(amt, 0.0, 1.0));
+}
 
 void main() {
   vec3 orig = texture(u_orig, v_uv).rgb;
@@ -254,6 +301,9 @@ void main() {
   // 色温度：暖かく＝赤を上げ青を下げる
   col.r += u_warmth * 0.05;
   col.b -= u_warmth * 0.05;
+
+  // 色味フィルターは最後。肌の補正が終わった画に対して全体の色を決める。
+  col = applyLook(clamp(col, 0.0, 1.0), u_look, u_lookAmount);
 
   fragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;

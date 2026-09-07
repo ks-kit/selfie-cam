@@ -33,6 +33,21 @@
     <canvas id="view"></canvas>
     <div id="hint">長押しで補正前と見比べ</div>
     <button id="btn-timer">タイマー</button>
+    <button id="btn-look">色味</button>
+
+    <!-- 色味フィルターの一覧。映像の上に出すので、コントロール側の幅を食わない -->
+    <div id="looks" class="hidden">
+      <div id="look-list">
+        <button data-look="0">なし</button>
+        <button data-look="1">フィルム</button>
+        <button data-look="2">クリア</button>
+        <button data-look="3">やわらか</button>
+        <button data-look="4">ノスタルジー</button>
+        <button data-look="5">クール</button>
+        <button data-look="6">モノクロ</button>
+      </div>
+      <label id="look-amt"><span>強さ</span><input type="range" id="look-amount" min="0" max="1" step="0.05"><output></output></label>
+    </div>
 
     <!-- セルフタイマーの残り秒。撮影の邪魔をしないよう当たり判定は持たせない -->
     <div id="countdown" class="hidden"><span id="cd-num"></span></div>
