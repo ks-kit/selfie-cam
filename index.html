@@ -32,6 +32,13 @@
   <div id="stage">
     <canvas id="view"></canvas>
     <div id="hint">長押しで補正前と見比べ</div>
+    <button id="btn-timer">タイマー</button>
+
+    <!-- セルフタイマーの残り秒。撮影の邪魔をしないよう当たり判定は持たせない -->
+    <div id="countdown" class="hidden"><span id="cd-num"></span></div>
+
+    <!-- 直前に撮った一枚。純正カメラと同じで、押すと写真が開く -->
+    <button id="thumb" class="hidden" aria-label="直前に撮った写真を見る"><img id="thumb-img" alt=""></button>
 
     <!-- iOS はカメラ起動にユーザー操作が必須なので、この一手は省けない。
          せめて外さないよう、画面のどこをタップしても始まるようにしてある。 -->

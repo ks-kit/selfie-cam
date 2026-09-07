@@ -40,6 +40,7 @@ html, body {
 
 .overlay {
   position: absolute; inset: 0;
+  z-index: 10;   /* タイマー・サムネイル（6）より前面に */
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   gap: 14px;
@@ -168,6 +169,45 @@ button.tiny { padding: 6px 12px; font-size: 12px; }
 }
 .tune-body output { font-size: 12px; color: #4fd1c5; text-align: right; font-variant-numeric: tabular-nums; }
 .tune-body input[type=range] { width: 100%; accent-color: #0a7ea4; height: 26px; }
+
+/* ---- セルフタイマー ---- */
+/* 純正カメラと同じく映像の上に浮かせる。コントロール側の幅を食わないため。 */
+#btn-timer {
+  position: absolute; right: 12px; top: 12px;
+  padding: 7px 13px; font-size: 12px; border-radius: 16px;
+  background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.28); color: #ddd;
+  z-index: 6;
+}
+#btn-timer.on { background: #0a7ea4; border-color: #0a7ea4; color: #fff; font-weight: 600; }
+
+/* ---- セルフタイマーの残り秒 ---- */
+#countdown {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;        /* 構えている間の長押し比較を邪魔しない */
+  z-index: 6;
+}
+#countdown.hidden { display: none; }
+#cd-num {
+  font-size: 108px; font-weight: 300; color: #fff;
+  line-height: 1; font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 24px rgba(0,0,0,.6);
+}
+
+/* ---- 直前に撮った一枚 ---- */
+#thumb {
+  position: absolute; left: 12px; bottom: 12px;
+  width: 58px; height: 58px; padding: 0;
+  border-radius: 10px; overflow: hidden;
+  border: 2px solid rgba(255,255,255,.85);
+  background: #000; box-shadow: 0 2px 10px rgba(0,0,0,.5);
+  z-index: 6;
+}
+#thumb.hidden { display: none; }
+#thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+/* タイマーが入っているときは、シャッターが「中止」も兼ねることを色で示す */
+.shutter.counting { background: #c63737; border-color: #e0a0a0; }
 
 /* ---- 補正前との比較ヒント ---- */
 #hint {

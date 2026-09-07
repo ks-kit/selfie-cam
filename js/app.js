@@ -20,6 +20,8 @@ const el = {
   tune: $('tune'), btnTuneOpen: $('btn-tune-open'), btnTuneClose: $('btn-tune-close'),
   btnTuneReset: $('btn-tune-reset'), btnTuneSave: $('btn-tune-save'), chkMask: $('chk-mask'),
   diag: $('diag'), chkDiag: $('chk-diag'), chkQuick: $('chk-quick'),
+  btnTimer: $('btn-timer'), countdown: $('countdown'), cdNum: $('cd-num'),
+  thumb: $('thumb'), thumbImg: $('thumb-img'),
 };
 
 // 要求する解像度。実際に返る値は端末とブラウザ次第なので必ず表示して確認する。
@@ -48,7 +50,7 @@ const PRESETS = {
 };
 
 // プリセットの数値を変えたので、保存済みの旧設定は読み込まないようキーを上げる
-const STORE_KEY = 'beautycam.v7';
+const STORE_KEY = 'beautycam.v8';
 
 const state = {
   stream: null,
@@ -56,6 +58,7 @@ const state = {
   facing: 'user',      // 'user' = インカメラ / 'environment' = アウトカメラ
   running: false,
   camOk: false,       // 一度でもカメラを開けたか。次回の自動起動の判断に使う
+  timer: 0,           // セルフタイマーの秒数。0 はオフ
   rafId: null,
   frames: 0,
   lastFpsAt: 0,
@@ -179,6 +182,7 @@ function waitForVideoSize(timeout = 4000) {
 }
 
 function stopCamera() {
+  cancelCountdown();          // 停止・カメラ切替・解像度変更のいずれでも秒読みは無効にする
   state.running = false;
   if (state.rafId) { cancelAnimationFrame(state.rafId); state.rafId = null; }
   if (state.stream) { state.stream.getTracks().forEach((t) => t.stop()); state.stream = null; }
@@ -241,6 +245,11 @@ async function capture() {
     `${state.shot.w}×${state.shot.h} / ${(blob.size / 1024 / 1024).toFixed(2)} MB / JPEG 95%`;
   el.pvScroll.classList.remove('actual');
   el.btnZoom.textContent = '等倍で見る';
+
+  // 純正カメラと同じく、直前の一枚を隅に残す。
+  // 「撮ったらすぐ保存」でプレビューを飛ばしたときの、写真への戻り道にもなる。
+  el.thumbImg.src = state.shot.url;
+  el.thumb.classList.remove('hidden');
 
   // 「撮ったらすぐ保存」がオンなら、プレビューを挟まずに保存へ進む。
   // 保存しきれなかった場合（iOS で共有シートが弾かれた、ユーザーがやめた）は
@@ -353,13 +362,58 @@ function showError(e) {
   el.err.classList.remove('hidden');
 }
 
+/* ---------------- セルフタイマー ---------------- */
+
+const TIMERS = [0, 3, 5, 10];   // オフ → 3秒 → 5秒 → 10秒 の順に巡回する
+
+let cdId = null;
+
+function syncTimerButton() {
+  el.btnTimer.textContent = state.timer ? `${state.timer}秒` : 'タイマー';
+  el.btnTimer.classList.toggle('on', state.timer > 0);
+}
+
+function cancelCountdown() {
+  if (cdId) { clearInterval(cdId); cdId = null; }
+  el.countdown.classList.add('hidden');
+  el.btnShutter.classList.remove('counting');
+}
+
+function startCountdown() {
+  let left = state.timer;
+  el.cdNum.textContent = left;
+  el.countdown.classList.remove('hidden');
+  el.btnShutter.classList.add('counting');
+  cdId = setInterval(() => {
+    left -= 1;
+    if (left > 0) { el.cdNum.textContent = left; return; }
+    cancelCountdown();
+    capture();
+  }, 1000);
+}
+
+el.btnTimer.addEventListener('click', () => {
+  cancelCountdown();
+  state.timer = TIMERS[(TIMERS.indexOf(state.timer) + 1) % TIMERS.length];
+  syncTimerButton();
+  persist();
+});
+
 /* ---------------- イベント ---------------- */
 
 // ボタンだけでなくオーバーレイ全体で受ける。
 // ボタンへのタップもここへ上がってくるので、待ち受けはこれ一つでよい。
 el.startOverlay.addEventListener('click', () => startCamera());
 el.btnRetry.addEventListener('click', () => startCamera());
-el.btnShutter.addEventListener('click', capture);
+el.btnShutter.addEventListener('click', () => {
+  if (cdId) { cancelCountdown(); return; }              // 秒読み中なら中止
+  if (state.timer > 0 && state.running) { startCountdown(); return; }
+  capture();
+});
+
+el.thumb.addEventListener('click', () => {
+  if (state.shot) el.preview.classList.remove('hidden');
+});
 el.btnStop.addEventListener('click', () => {
   stopCamera();
   setState('停止');
@@ -433,6 +487,7 @@ function persist() {
       diag: el.chkDiag.checked,
       quick: el.chkQuick.checked,
       camOk: state.camOk,
+      timer: state.timer,
     }));
   } catch (_) { /* 保存できない環境でも動作には支障がないので無視する */ }
 }
@@ -449,10 +504,12 @@ function restore() {
     if (typeof d.diag === 'boolean') el.chkDiag.checked = d.diag;
     if (typeof d.quick === 'boolean') el.chkQuick.checked = d.quick;
     if (typeof d.camOk === 'boolean') state.camOk = d.camOk;
+    if (TIMERS.includes(d.timer)) state.timer = d.timer;
   }
   syncDiag();
   syncPresetButtons();
   syncSliders();
+  syncTimerButton();
 }
 
 function showHint() {
