@@ -32,17 +32,20 @@ const RES = {
 // プリセット。実機で見ながら調整した値（2026-09-07）。
 // 当初の設定は全体に効きが弱かったため一段強くし、
 // 元の「ナチュラル」相当は「ひかえめ」として残してある。
+//
+// detail（質感の戻し量）は 2026-09-07 に引き上げた。肌マスクを締めた分、
+// ぼかしが肌に集中するようになったため、以前の低い値では肌がのっぺりしすぎる。
 const PRESETS = {
   off:     { smooth: 0.00, detail: 0.45, brightness: 0.00, contrast: 0.00, saturation:  0.00, warmth:  0.00, skinTone: 0.00, radius:  6 },
-  light:   { smooth: 0.55, detail: 0.55, brightness: 0.06, contrast: 0.02, saturation:  0.02, warmth:  0.02, skinTone: 0.10, radius:  6 },
-  natural: { smooth: 0.85, detail: 0.38, brightness: 0.11, contrast: 0.03, saturation:  0.03, warmth:  0.03, skinTone: 0.18, radius:  8 },
-  strong:  { smooth: 1.00, detail: 0.22, brightness: 0.15, contrast: 0.04, saturation:  0.05, warmth:  0.04, skinTone: 0.28, radius: 11 },
-  fair:    { smooth: 0.88, detail: 0.38, brightness: 0.20, contrast: 0.02, saturation: -0.04, warmth: -0.08, skinTone: 0.38, radius:  8 },
-  warm:    { smooth: 0.88, detail: 0.38, brightness: 0.12, contrast: 0.03, saturation:  0.14, warmth:  0.20, skinTone: 0.22, radius:  8 },
+  light:   { smooth: 0.55, detail: 0.60, brightness: 0.06, contrast: 0.02, saturation:  0.02, warmth:  0.02, skinTone: 0.10, radius:  6 },
+  natural: { smooth: 0.85, detail: 0.48, brightness: 0.11, contrast: 0.03, saturation:  0.03, warmth:  0.03, skinTone: 0.18, radius:  8 },
+  strong:  { smooth: 1.00, detail: 0.34, brightness: 0.15, contrast: 0.04, saturation:  0.05, warmth:  0.04, skinTone: 0.28, radius: 11 },
+  fair:    { smooth: 0.88, detail: 0.48, brightness: 0.20, contrast: 0.02, saturation: -0.04, warmth: -0.08, skinTone: 0.38, radius:  8 },
+  warm:    { smooth: 0.88, detail: 0.48, brightness: 0.12, contrast: 0.03, saturation:  0.14, warmth:  0.20, skinTone: 0.22, radius:  8 },
 };
 
 // プリセットの数値を変えたので、保存済みの旧設定は読み込まないようキーを上げる
-const STORE_KEY = 'beautycam.v2';
+const STORE_KEY = 'beautycam.v3';
 
 const state = {
   stream: null,

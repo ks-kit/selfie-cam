@@ -22,7 +22,9 @@ export const DEFAULT_PARAMS = {
   warmth: 0.0,
   skinTone: 0.0,
   radius: 6.0,      // ぼかし半径（低解像度側の画素数）
-  sigmaColor: 0.16, // 同じ肌とみなす色の差
+  // 同じ肌とみなす色の差。0.16 では色差 0.16 の画素にもまだ 0.61 の重みが残り、
+  // 眉毛と肌の境目のような中くらいの輪郭を越えて混ざっていた。
+  sigmaColor: 0.11,
 };
 
 export class Renderer {

@@ -5,7 +5,7 @@
 // 古い app.js が residual で残り、実機で「直したのに変わらない」が起きる）。
 // オフラインでも起動できるよう、取得に成功したものは都度キャッシュへ写す。
 
-const CACHE = 'selfie-cam-v2';
+const CACHE = 'selfie-cam-v3';
 
 const PRECACHE = [
   './',
