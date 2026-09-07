@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000">
+<title>顔検出の検証</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; height:100%; background:#000; color:#eee; overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif; }
+  #app { position:fixed; inset:0; display:flex; flex-direction:column;
+    padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom); }
+  #hud { flex:0 0 auto; display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:#222; }
+  #hud > div { background:#0d0d0d; padding:7px 8px; overflow:hidden; }
+  #hud b { display:block; color:#7a7a7a; font-weight:400; font-size:11px; }
+  #hud span { display:block; font-size:16px; font-weight:600; color:#4fd1c5;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #stage { flex:1 1 auto; position:relative; min-height:0; background:#000; }
+  #v, #c { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+  #v { transform:scaleX(-1); }
+  #c  { transform:scaleX(-1); }
+  #ctrl { flex:0 0 auto; background:#0d0d0d; border-top:1px solid #222;
+    padding:9px 10px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; font-size:12px; color:#bbb; }
+  #ctrl label { display:flex; align-items:center; gap:5px; }
+  button { font-family:inherit; color:#eee; background:#0a7ea4; border:1px solid #0a7ea4;
+    border-radius:8px; padding:10px 18px; font-size:14px; }
+  select { background:#222; color:#eee; border:1px solid #3d3d3d; border-radius:6px; padding:5px 7px; font-size:12px; }
+  input[type=checkbox] { width:17px; height:17px; accent-color:#0a7ea4; }
+  #log { position:absolute; left:8px; bottom:8px; right:8px; font-size:11px; color:#8fe;
+    white-space:pre-wrap; pointer-events:none; text-shadow:0 0 4px #000; z-index:5; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <div><b>状態</b><span id="s-state">待機</span></div>
+    <div><b>FPS</b><span id="s-fps">—</span></div>
+    <div><b>検出にかかる時間</b><span id="s-det">—</span></div>
+    <div><b>点の数</b><span id="s-pts">—</span></div>
+  </div>
+  <div id="stage">
+    <video id="v" playsinline autoplay muted></video>
+    <canvas id="c"></canvas>
+    <div id="log"></div>
+  </div>
+  <div id="ctrl">
+    <button id="start">カメラを起動</button>
+    <label>検出の頻度
+      <select id="skip">
+        <option value="1">毎フレーム</option>
+        <option value="3" selected>3フレームに1回</option>
+        <option value="5">5フレームに1回</option>
+      </select>
+    </label>
+    <label>検出器
+      <select id="engine">
+        <option value="mesh" selected>輪郭478点</option>
+        <option value="box">顔の枠だけ（軽量）</option>
+      </select>
+    </label>
+    <label>処理系
+      <select id="delegate">
+        <option value="GPU" selected>GPU</option>
+        <option value="CPU">CPU</option>
+      </select>
+    </label>
+    <label>検出の解像度
+      <select id="det-res">
+        <option value="0">そのまま</option>
+        <option value="640" selected>長辺640</option>
+        <option value="480">長辺480</option>
+        <option value="320">長辺320</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="draw-pts" checked>点を描く</label>
+    <label><input type="checkbox" id="draw-mask">顔マスクを見る</label>
+  </div>
+</div>
+<script type="module" src="js/face-test.js"></script>
+</body>
+</html>

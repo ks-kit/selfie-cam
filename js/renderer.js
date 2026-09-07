@@ -76,7 +76,8 @@ export class Renderer {
     this.prog.composite = this._program(VERT_QUAD,   FRAG_COMPOSITE,
       ['u_orig', 'u_blur', 'u_base', 'u_smooth', 'u_detail', 'u_brightness', 'u_contrast',
        'u_saturation', 'u_warmth', 'u_skinTone', 'u_shadow', 'u_even',
-       'u_look', 'u_lookAmount', 'u_maskOnly']);
+       'u_look', 'u_lookAmount', 'u_maskOnly',
+       'u_faceMask', 'u_faceOn', 'u_faceFlip']);
 
     // 画面全体を覆う三角形2枚。全パスで使い回す。
     this.vao = gl.createVertexArray();
@@ -92,6 +93,7 @@ export class Renderer {
     }
 
     this.videoTex = this._texture();
+    this.faceTex  = this._texture();   // 顔マスク（2D キャンバスから毎回上げ直す）
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   }
 
@@ -282,6 +284,20 @@ export class Renderer {
     this._useTexture(this.fbo.orig.tex,  0, cp.u.u_orig);
     this._useTexture(this.fbo.b.tex,     1, cp.u.u_blur);
     this._useTexture(this.fbo.baseA.tex, 2, cp.u.u_base);
+
+    // 顔マスク。渡されたときだけ有効にし、無ければ従来どおり色だけの判定で動く。
+    const faceOn = !!(params.faceSource && params.faceOn);
+    if (faceOn) {
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, this.faceTex);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, params.faceSource);
+      gl.uniform1i(cp.u.u_faceMask, 3);
+    } else {
+      this._useTexture(this.faceTex, 3, cp.u.u_faceMask);
+    }
+    gl.uniform1f(cp.u.u_faceOn,   faceOn ? 1.0 : 0.0);
+    gl.uniform1f(cp.u.u_faceFlip, params.flipX ? 1.0 : 0.0);
+
     gl.uniform1f(cp.u.u_smooth,     p.smooth);
     gl.uniform1f(cp.u.u_detail,     p.detail);
     gl.uniform1f(cp.u.u_brightness, p.brightness);

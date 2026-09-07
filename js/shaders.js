@@ -171,6 +171,13 @@ uniform float u_even;        // 色ムラの平均化     0..1
 uniform float u_look;        // 色味フィルターの種類（0 = なし）
 uniform float u_lookAmount;  // その強さ 0..1
 uniform float u_maskOnly;    // 1.0 で肌マスクを可視化（調整用）
+
+// 顔検出から作ったマスク。顔の内側だけが白く、目・眉・唇は黒く抜いてある。
+// 色だけの肌判定では、唇と暖色の背景（木目の壁など）を肌と区別できなかった。
+// このマスクを掛けると、その2つをまとめて補正の対象から外せる。
+uniform sampler2D u_faceMask;
+uniform float u_faceOn;      // 0 なら顔検出を使わない（従来どおりの動作）
+uniform float u_faceFlip;    // 鏡像表示のときは左右を合わせる
 out vec4 fragColor;
 ${SKIN_GLSL}
 // 持ち上げの上限（明るさ）。これが無いと鼻の穴や口の線まで浮く。
@@ -233,6 +240,14 @@ void main() {
   vec3 blur = texture(u_blur, v_uv).rgb;
 
   float mask = skinMask(orig);
+
+  // 顔マスクを掛ける。
+  // 映像のテクスチャと描画先とで上下の向きが逆なので y を反転し、
+  // 鏡像表示のときは x も合わせる。
+  if (u_faceOn > 0.5) {
+    vec2 fuv = vec2(u_faceFlip > 0.5 ? 1.0 - v_uv.x : v_uv.x, 1.0 - v_uv.y);
+    mask *= texture(u_faceMask, fuv).r;
+  }
 
   if (u_maskOnly > 0.5) {
     fragColor = vec4(vec3(mask), 1.0);

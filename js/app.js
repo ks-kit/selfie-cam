@@ -2,6 +2,7 @@
 // 補正処理そのものは renderer.js と shaders.js 側にある。
 
 import { Renderer, DEFAULT_PARAMS } from './renderer.js';
+import { FaceMask } from './face.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -20,6 +21,7 @@ const el = {
   tune: $('tune'), btnTuneOpen: $('btn-tune-open'), btnTuneClose: $('btn-tune-close'),
   btnTuneReset: $('btn-tune-reset'), btnTuneSave: $('btn-tune-save'), chkMask: $('chk-mask'),
   diag: $('diag'), chkDiag: $('chk-diag'), chkQuick: $('chk-quick'),
+  chkFace: $('chk-face'),
   btnTimer: $('btn-timer'), countdown: $('countdown'), cdNum: $('cd-num'),
   thumb: $('thumb'), thumbImg: $('thumb-img'),
   btnLook: $('btn-look'), looks: $('looks'), lookList: $('look-list'), lookAmount: $('look-amount'),
@@ -51,7 +53,7 @@ const PRESETS = {
 };
 
 // プリセットの数値を変えたので、保存済みの旧設定は読み込まないようキーを上げる
-const STORE_KEY = 'beautycam.v9';
+const STORE_KEY = 'beautycam.v10';
 
 const state = {
   stream: null,
@@ -90,6 +92,23 @@ function applyPreviewSize(vw, vh) {
 }
 
 const renderer = new Renderer(el.canvas);
+
+// 顔検出。モデルが 3.58MB あるので、チェックが入って初めて読み込む。
+const face = new FaceMask();
+const faceOn = () => el.chkFace.checked && face.ready;
+
+async function enableFace() {
+  if (face.ready || face.loading) return;
+  toast('顔検出を読み込んでいます…');
+  try {
+    await face.init();
+    toast('顔検出を有効にしました');
+  } catch (_) {
+    el.chkFace.checked = false;
+    persist();
+    toast('顔検出の読み込みに失敗しました（通信を確認してください）');
+  }
+}
 
 /* ---------------- カメラ ---------------- */
 
@@ -196,13 +215,20 @@ function stopCamera() {
 function loop() {
   if (!state.running) return;
   state.rafId = requestAnimationFrame(loop);
+  const now0 = performance.now();
 
   if (el.video.readyState >= 2) {
+    // 顔検出は数フレームに1回だけ走る（1回 48ms 前後かかるため）。
+    // 検出しないフレームは前回のマスクをそのまま使う。
+    if (faceOn()) face.update(el.video, now0);
+
     renderer.draw(el.video, {
       ...state.params,
       look: state.look, lookAmount: state.lookAmount,
       flipX: el.chkMirrorPreview.checked,
       maskOnly: el.chkMask.checked,
+      faceOn: faceOn() && face.hasFace,
+      faceSource: face.canvas,
       // 美顔がオフでも色味だけは効かせたいので、両方オフのときだけ素通しにする
       bypass: state.comparing || (state.preset === 'off' && state.look === 0),
     });
@@ -235,6 +261,8 @@ async function capture() {
     ...state.params,
     look: state.look, lookAmount: state.lookAmount,
     flipX: false,
+    faceOn: faceOn() && face.hasFace,
+    faceSource: face.canvas,
     bypass: state.preset === 'off' && state.look === 0,
   });
 
@@ -558,6 +586,7 @@ function persist() {
       res: el.selRes.value,
       diag: el.chkDiag.checked,
       quick: el.chkQuick.checked,
+      face: el.chkFace.checked,
       camOk: state.camOk,
       timer: state.timer,
       look: state.look,
@@ -577,6 +606,7 @@ function restore() {
     if (d.res && RES[d.res]) el.selRes.value = d.res;
     if (typeof d.diag === 'boolean') el.chkDiag.checked = d.diag;
     if (typeof d.quick === 'boolean') el.chkQuick.checked = d.quick;
+    if (typeof d.face === 'boolean') el.chkFace.checked = d.face;
     if (typeof d.camOk === 'boolean') state.camOk = d.camOk;
     if (TIMERS.includes(d.timer)) state.timer = d.timer;
     if (Number.isInteger(d.look) && d.look >= 0 && d.look < LOOK_NAMES.length) state.look = d.look;
@@ -627,6 +657,10 @@ function syncDiag() {
   el.diag.classList.toggle('hidden', !el.chkDiag.checked);
 }
 el.chkDiag.addEventListener('change', () => { syncDiag(); persist(); });
+el.chkFace.addEventListener('change', () => {
+  persist();
+  if (el.chkFace.checked) enableFace();
+});
 el.chkQuick.addEventListener('change', persist);
 
 // iOS では「保存」も共有シートを開くので「共有」と実質同じ動作になる。
@@ -669,6 +703,8 @@ el.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     return;
   }
   restore();
+  // 前回オンにしていたなら、起動時に読み込んでおく
+  if (el.chkFace.checked) enableFace();
   setState('待機中');
   tryAutoStart();
 })();
