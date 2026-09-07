@@ -262,8 +262,10 @@ const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
 
 // 写真を端末に残す。戻り値は 'ok' | 'cancel' | 'blocked'。
 //
-// iOS は共有シートをタップ直後にしか開けない。撮影処理を挟むと弾かれるので、
-// その場合は 'blocked' を返して呼び出し側にプレビューを出させる。
+// iOS の共有シートはタップ直後にしか開けない、という制約がある。
+// ただし 2026-09-07 に iPhone 15 Pro で試したところ、撮影処理を挟んでも開けた。
+// 撮影が長引く（4K など）と間に合わない可能性は残るので、
+// 弾かれた場合は 'blocked' を返して呼び出し側にプレビューを出させる。
 async function storeShot() {
   const name = `selfie_${timestamp()}.jpg`;
 
@@ -353,8 +355,10 @@ function showError(e) {
 
 /* ---------------- イベント ---------------- */
 
-el.btnStart.addEventListener('click', startCamera);
-el.btnRetry.addEventListener('click', startCamera);
+// ボタンだけでなくオーバーレイ全体で受ける。
+// ボタンへのタップもここへ上がってくるので、待ち受けはこれ一つでよい。
+el.startOverlay.addEventListener('click', () => startCamera());
+el.btnRetry.addEventListener('click', () => startCamera());
 el.btnShutter.addEventListener('click', capture);
 el.btnStop.addEventListener('click', () => {
   stopCamera();

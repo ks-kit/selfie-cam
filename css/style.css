@@ -36,6 +36,8 @@ html, body {
 #stage { flex: 1 1 auto; position: relative; min-height: 0; background: #000; }
 #view { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
 
+#start-overlay { cursor: pointer; }
+
 .overlay {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;

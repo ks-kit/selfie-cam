@@ -33,9 +33,11 @@
     <canvas id="view"></canvas>
     <div id="hint">長押しで補正前と見比べ</div>
 
+    <!-- iOS はカメラ起動にユーザー操作が必須なので、この一手は省けない。
+         せめて外さないよう、画面のどこをタップしても始まるようにしてある。 -->
     <div id="start-overlay" class="overlay">
       <button id="btn-start" class="big">カメラを起動</button>
-      <p class="note">起動するとカメラの使用許可を聞かれます</p>
+      <p class="note">画面のどこをタップしても始まります<br>（初回のみカメラの使用許可を聞かれます）</p>
     </div>
 
     <div id="err" class="overlay hidden">
