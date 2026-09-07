@@ -80,25 +80,14 @@ void main() {
   fragColor = vec4(sum / wsum, 1.0);
 }`;
 
-export const FRAG_COMPOSITE = `#version 300 es
-precision highp float;
-in vec2 v_uv;
-uniform sampler2D u_orig;    // 元映像
-uniform sampler2D u_blur;    // ぼかし済み
-uniform float u_smooth;      // 肌なめらか      0..1
-uniform float u_detail;      // 質感の戻し量    0..1
-uniform float u_brightness;  // 明るさ         -1..1
-uniform float u_contrast;    // コントラスト    -1..1
-uniform float u_saturation;  // 彩度           -1..1
-uniform float u_warmth;      // 色温度(暖⇔寒)  -1..1
-uniform float u_skinTone;    // 肌の明るさ      -1..1
-uniform float u_maskOnly;    // 1.0 で肌マスクを可視化（調整用）
-out vec4 fragColor;
+// 肌色の判定。合成パスと肌抽出パスの両方で使うので、断片として切り出してある。
+//
+// YCbCr に変換すると、肌の色は明るさに関係なく狭い範囲に集まる。その性質を使う。
+const SKIN_GLSL = `
+float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 
-// 肌色の判定。YCbCr に変換すると、肌の色は明るさに関係なく
-// 狭い範囲に集まるという性質を使う。
 float skinMask(vec3 c) {
-  float y  = dot(c, vec3(0.299, 0.587, 0.114));
+  float y  = luma(c);
   float cb = (c.b - y) * 0.564 + 0.5;
   float cr = (c.r - y) * 0.713 + 0.5;
 
@@ -119,6 +108,71 @@ float skinMask(vec3 c) {
   m *= smoothstep(1.02, 0.86, y);
   return m;
 }
+`;
+
+// 肌だけを取り出して低解像度へ落とすパス。
+// 色に肌マスクを掛けて書き、マスクそのものを alpha に入れる。
+// このあとガウスでぼかしてから rgb を alpha で割ると、
+// 「その辺りにある肌だけの平均色」が得られる。髪や背景は alpha が小さいので混ざらない。
+export const FRAG_SKINPACK = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+out vec4 fragColor;
+${SKIN_GLSL}
+void main() {
+  vec3 c = texture(u_tex, v_uv).rgb;
+  float m = skinMask(c);
+  fragColor = vec4(c * m, m);
+}`;
+
+// 素直なガウスぼかし。肌の平均色を作るのに使う（横→縦の2回）。
+// alpha も一緒にぼかす必要があるので RGBA のまま扱う。
+export const FRAG_GAUSS = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform vec2  u_texel;
+uniform vec2  u_dir;
+uniform float u_radius;
+out vec4 fragColor;
+
+const int TAPS = 8;
+
+void main() {
+  vec4 sum = texture(u_tex, v_uv);
+  float wsum = 1.0;
+  float sigma = max(u_radius * 0.5, 0.001);
+  for (int i = 1; i <= TAPS; i++) {
+    float off = float(i) * u_radius / float(TAPS);
+    vec2 d = u_dir * u_texel * off;
+    float w = exp(-0.5 * (off * off) / (sigma * sigma));
+    sum += (texture(u_tex, v_uv + d) + texture(u_tex, v_uv - d)) * w;
+    wsum += 2.0 * w;
+  }
+  fragColor = sum / wsum;
+}`;
+
+export const FRAG_COMPOSITE = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_orig;    // 元映像
+uniform sampler2D u_blur;    // ぼかし済み
+uniform float u_smooth;      // 肌なめらか      0..1
+uniform float u_detail;      // 質感の戻し量    0..1
+uniform float u_brightness;  // 明るさ         -1..1
+uniform float u_contrast;    // コントラスト    -1..1
+uniform float u_saturation;  // 彩度           -1..1
+uniform float u_warmth;      // 色温度(暖⇔寒)  -1..1
+uniform float u_skinTone;    // 肌の明るさ      -1..1
+uniform sampler2D u_base;    // 周囲の肌の平均色（rgb は肌マスクで重み付け済み、a が重み）
+uniform float u_shadow;      // 髭・くまの持ち上げ 0..1
+uniform float u_even;        // 色ムラの平均化     0..1
+uniform float u_maskOnly;    // 1.0 で肌マスクを可視化（調整用）
+out vec4 fragColor;
+${SKIN_GLSL}
+// 持ち上げの上限（明るさ）。これが無いと鼻の穴や口の線まで浮く。
+const float LIFT_MAX = 0.20;
 
 void main() {
   vec3 orig = texture(u_orig, v_uv).rgb;
@@ -137,6 +191,45 @@ void main() {
   vec3 smoothed = blur + detail * u_detail;
 
   vec3 col = mix(orig, smoothed, clamp(u_smooth, 0.0, 1.0) * mask);
+
+  // ---- 髭・くま・くすみ ----
+  //
+  // これらは「周りの肌より、その場所だけ暗い」という共通の性質を持つ。
+  // バイラテラルは細かい凹凸しか触れないので、この低い周波数の暗さは消せない。
+  // そこで「その辺りの肌の平均色」を別に作り、平均より暗い分を戻す。
+  vec4  packed = texture(u_base, v_uv);
+  float area   = packed.a;                          // その辺りが肌である度合い
+  vec3  base   = packed.rgb / max(area, 0.001);     // 肌だけの平均色
+  float yBase  = luma(base);
+  float yCol   = luma(col);
+
+  // area をそのまま重みに使うと、髭自身のマスクが低いせいで
+  // 髭の中心ほど平均の重みが下がり、一番効かせたい場所で効かなくなる。
+  // 「顔の領域か」を判定したいだけなので、しきい値を通して 0/1 に寄せる。
+  float areaW = smoothstep(0.12, 0.45, area);
+
+  // 暗すぎる／明るすぎる画素は触らない（鼻の穴・口の線・眉・白飛び）。
+  // 髭は y=0.53 前後なので残り、眉は 0.19 前後なので落ちる。
+  float guard = areaW * smoothstep(0.16, 0.34, yCol) * smoothstep(1.00, 0.88, yCol);
+
+  // 唇を守る。唇は周囲の肌より赤（cr）が明確に高い。
+  // これが無いと、唇は「周囲より暗い」だけの理由で大きく持ち上がって色が飛ぶ。
+  float crCol  = (col.r  - yCol)  * 0.713 + 0.5;
+  float crBase = (base.r - yBase) * 0.713 + 0.5;
+  float redGuard = 1.0 - smoothstep(0.010, 0.045, crCol - crBase);
+
+  // 平均より暗い分を、上限つきで持ち上げる（暗くはしない）
+  col += min(max(yBase - yCol, 0.0), LIFT_MAX) * u_shadow * guard * redGuard;
+
+  // 色みだけを周囲の肌へ寄せる（明るさは変えない）。
+  // 周囲より彩度が低い画素だけを対象にするのが要点。
+  // 髭は彩度が落ちて青寄りなので寄せたいが、唇は周囲より彩度が高いので触れずに済む。
+  float yc = luma(col);
+  vec3 chroma  = col  - vec3(yc);
+  vec3 bChroma = base - vec3(yBase);
+  float bLen = length(bChroma);
+  float lack = clamp((bLen - length(chroma)) / max(bLen, 0.05), 0.0, 1.0);
+  col = vec3(yc) + mix(chroma, bChroma, clamp(u_even, 0.0, 1.0) * guard * lack);
 
   // 肌だけを明るく（くすみ抜き）
   col += vec3(u_skinTone * 0.14) * mask;

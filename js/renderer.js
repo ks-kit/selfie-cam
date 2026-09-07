@@ -1,17 +1,21 @@
 // WebGL2 による美顔補正パイプライン。
 //
 // 描画は4パス構成:
-//   Pass 0  映像 → origFBO        （出力解像度。鏡像と上下の向きをここで確定）
-//   Pass 1  origFBO → blurA       （バイラテラル・横。ここから下は低解像度）
-//   Pass 2  blurA   → blurB       （バイラテラル・縦）
-//   Pass 3  origFBO + blurB → 画面（合成・トーン調整）
+//   Pass 0  映像 → origFBO             （出力解像度。鏡像と上下の向きをここで確定）
+//   Pass 1  origFBO → blurA            （バイラテラル・横。ここから下は低解像度）
+//   Pass 2  blurA   → blurB            （バイラテラル・縦）
+//   Pass 3  origFBO → baseA            （肌だけ取り出してごく低解像度へ）
+//   Pass 4  baseA   → baseB            （ガウス・横）
+//   Pass 5  baseB   → baseA            （ガウス・縦。これで「周囲の肌の平均色」ができる）
+//   Pass 6  origFBO + blurB + baseA → 画面（合成・トーン調整）
 //
 // ぼかしだけを低解像度で行うのが要点。
 // ぼかしは低い周波数の成分しか持たないため縮小しても見た目が変わらない一方、
 // 計算量は面積に比例するので、ここを半分にすると負荷が 1/4 になる。
 // 合成は出力解像度のまま行うので、目や髪のディテールは失われない。
 
-import { VERT_SOURCE, VERT_QUAD, FRAG_BILATERAL, FRAG_COMPOSITE, FRAG_PASSTHROUGH } from './shaders.js';
+import { VERT_SOURCE, VERT_QUAD, FRAG_BILATERAL, FRAG_GAUSS, FRAG_SKINPACK,
+         FRAG_COMPOSITE, FRAG_PASSTHROUGH } from './shaders.js';
 
 export const DEFAULT_PARAMS = {
   smooth: 0.0,      // 肌なめらか
@@ -21,11 +25,23 @@ export const DEFAULT_PARAMS = {
   saturation: 0.0,
   warmth: 0.0,
   skinTone: 0.0,
+  shadow: 0.0,      // 髭・くま・くすみの持ち上げ
+  even: 0.0,        // 色ムラの平均化
   radius: 6.0,      // ぼかし半径（低解像度側の画素数）
   // 同じ肌とみなす色の差。0.16 では色差 0.16 の画素にもまだ 0.61 の重みが残り、
   // 眉毛と肌の境目のような中くらいの輪郭を越えて混ざっていた。
   sigmaColor: 0.11,
 };
+
+// 肌の平均色を作るバッファの大きさと、そこでのぼかし半径。
+// 出力解像度に依存しない固定値にしてあるので、プレビューでも撮影でも同じ効き方になる。
+const BASE_LONG   = 128;
+const BASE_RADIUS = 24;
+
+// バイラテラルの半径を解釈する基準になる、ぼかしバッファの長辺。
+// u_radius は「ぼかしバッファ上の画素数」なので、バッファの大きさが変わると
+// 画に対する効き幅も変わってしまう。ここを基準に正規化して揃える。
+const RADIUS_REF = 720;
 
 export class Renderer {
   constructor(canvas) {
@@ -52,9 +68,12 @@ export class Renderer {
     this.prog.blit      = this._program(VERT_QUAD,   FRAG_PASSTHROUGH, ['u_tex']);
     this.prog.bilateral = this._program(VERT_QUAD,   FRAG_BILATERAL,
       ['u_tex', 'u_texel', 'u_dir', 'u_radius', 'u_sigmaColor']);
+    this.prog.skinpack  = this._program(VERT_QUAD,   FRAG_SKINPACK, ['u_tex']);
+    this.prog.gauss     = this._program(VERT_QUAD,   FRAG_GAUSS,
+      ['u_tex', 'u_texel', 'u_dir', 'u_radius']);
     this.prog.composite = this._program(VERT_QUAD,   FRAG_COMPOSITE,
-      ['u_orig', 'u_blur', 'u_smooth', 'u_detail', 'u_brightness', 'u_contrast',
-       'u_saturation', 'u_warmth', 'u_skinTone', 'u_maskOnly']);
+      ['u_orig', 'u_blur', 'u_base', 'u_smooth', 'u_detail', 'u_brightness', 'u_contrast',
+       'u_saturation', 'u_warmth', 'u_skinTone', 'u_shadow', 'u_even', 'u_maskOnly']);
 
     // 画面全体を覆う三角形2枚。全パスで使い回す。
     this.vao = gl.createVertexArray();
@@ -143,12 +162,21 @@ export class Renderer {
     this._disposeFBO(this.fbo.orig);
     this._disposeFBO(this.fbo.a);
     this._disposeFBO(this.fbo.b);
+    this._disposeFBO(this.fbo.baseA);
+    this._disposeFBO(this.fbo.baseB);
 
     const bw = Math.max(2, Math.round(w * blurScale));
     const bh = Math.max(2, Math.round(h * blurScale));
     this.fbo.orig = this._makeFBO(w, h);
     this.fbo.a    = this._makeFBO(bw, bh);
     this.fbo.b    = this._makeFBO(bw, bh);
+
+    // 肌の平均色用。出力解像度によらず固定の大きさにする
+    const bs = BASE_LONG / Math.max(w, h);
+    const sw = Math.max(2, Math.round(w * bs));
+    const sh = Math.max(2, Math.round(h * bs));
+    this.fbo.baseA = this._makeFBO(sw, sh);
+    this.fbo.baseB = this._makeFBO(sw, sh);
   }
 
   _bindTarget(target) {
@@ -200,7 +228,11 @@ export class Renderer {
     // 横と縦に分けると和で済み、見た目はほとんど変わらない。
     const bp = this.prog.bilateral;
     gl.useProgram(bp.id);
-    gl.uniform1f(bp.u.u_radius, p.radius);
+    // 半径はぼかしバッファ上の画素数なので、バッファの大きさで正規化して
+    // プレビュー（長辺720）と撮影（長辺1440）で効き幅が揃うようにする。
+    // これをしないと、保存される写真だけ補正の効き幅が半分になる。
+    const rScale = Math.max(this.fbo.a.w, this.fbo.a.h) / RADIUS_REF;
+    gl.uniform1f(bp.u.u_radius, p.radius * rScale);
     gl.uniform1f(bp.u.u_sigmaColor, p.sigmaColor);
 
     this._bindTarget(this.fbo.a);
@@ -215,12 +247,38 @@ export class Renderer {
     this._useTexture(this.fbo.a.tex, 0, bp.u.u_tex);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-    // --- Pass 3: 合成して画面へ ---
+    // --- Pass 3,4,5: 周囲の肌の平均色を作る ---
+    // 肌だけを取り出して（色にマスクを掛け、マスクを alpha に入れて）ごく低い解像度へ落とし、
+    // 広めのガウスでぼかす。合成側で rgb を alpha で割ると肌だけの平均色になる。
+    // 髪や背景は alpha が小さいので平均に混ざらない。
+    const sp = this.prog.skinpack;
+    gl.useProgram(sp.id);
+    this._bindTarget(this.fbo.baseA);
+    this._useTexture(this.fbo.orig.tex, 0, sp.u.u_tex);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    const gp = this.prog.gauss;
+    gl.useProgram(gp.id);
+    gl.uniform1f(gp.u.u_radius, BASE_RADIUS);
+    gl.uniform2f(gp.u.u_texel, 1 / this.fbo.baseA.w, 1 / this.fbo.baseA.h);
+
+    this._bindTarget(this.fbo.baseB);
+    gl.uniform2f(gp.u.u_dir, 1, 0);
+    this._useTexture(this.fbo.baseA.tex, 0, gp.u.u_tex);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    this._bindTarget(this.fbo.baseA);
+    gl.uniform2f(gp.u.u_dir, 0, 1);
+    this._useTexture(this.fbo.baseB.tex, 0, gp.u.u_tex);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // --- Pass 6: 合成して画面へ ---
     const cp = this.prog.composite;
     gl.useProgram(cp.id);
     this._bindTarget(null);
-    this._useTexture(this.fbo.orig.tex, 0, cp.u.u_orig);
-    this._useTexture(this.fbo.b.tex,    1, cp.u.u_blur);
+    this._useTexture(this.fbo.orig.tex,  0, cp.u.u_orig);
+    this._useTexture(this.fbo.b.tex,     1, cp.u.u_blur);
+    this._useTexture(this.fbo.baseA.tex, 2, cp.u.u_base);
     gl.uniform1f(cp.u.u_smooth,     p.smooth);
     gl.uniform1f(cp.u.u_detail,     p.detail);
     gl.uniform1f(cp.u.u_brightness, p.brightness);
@@ -228,6 +286,8 @@ export class Renderer {
     gl.uniform1f(cp.u.u_saturation, p.saturation);
     gl.uniform1f(cp.u.u_warmth,     p.warmth);
     gl.uniform1f(cp.u.u_skinTone,   p.skinTone);
+    gl.uniform1f(cp.u.u_shadow,     p.shadow);
+    gl.uniform1f(cp.u.u_even,       p.even);
     gl.uniform1f(cp.u.u_maskOnly,   params.maskOnly ? 1.0 : 0.0);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
