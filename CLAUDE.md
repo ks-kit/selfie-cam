@@ -104,6 +104,14 @@ git push
 
 ## 注意
 
+- 🔴 **ブラウザのバーを消せるのは「ホーム画面に追加してそこから起動した場合」だけ。**
+  URL を直接ブラウザで開いている限り、上下のバーは Web ページ側からは消せない（ブラウザの仕様）。
+  実機で全画面を確認するときは、必ずホーム画面のアイコンから起動すること。
+- **Service Worker の登録は、このデスクトップアプリ内蔵ブラウザでは検証できない**（2026-09-07 確認）。
+  `sw.js` の取得は 200 で成功するのに登録だけが `An unknown error occurred when fetching the script`
+  で失敗する。内蔵ブラウザ側の制約なので、**実 Chrome で確認すること**。
+- ローカル検証で `127.0.0.1:8000` に SW を登録したら、**終わったら必ず解除する**。
+  このポートは voiceapp など他プロジェクトでも使うため、残すと別プロジェクトの表示を乗っ取る。
 - **このフォルダは Dropbox 同期下にあり、`.git` も同期される。**
   医院PC と家KS で**同時に git 操作をしないこと**。作業前に Dropbox の同期完了を確認する。
 - コミットには GitHub の匿名アドレス（`<id>+ks-kit@users.noreply.github.com`）を使う設定が
@@ -120,6 +128,9 @@ css/style.css       スタイル
 js/app.js           カメラ制御・補正パラメータ・撮影・保存
 js/renderer.js      WebGL2 の描画パイプライン（4パス構成）
 js/shaders.js       補正シェーダ本体（GLSL）
+manifest.json       PWA の定義（全画面表示・アイコン・起動URL）
+sw.js               Service Worker（オフライン起動・インストール要件）
+icons/              ホーム画面用アイコン（192/512/maskable/apple-touch）
 test-shader.html    シェーダ検証ページ
 仕様書.md            設計の経緯・実測値・ハマった点の記録
 README.md           公開用の説明
