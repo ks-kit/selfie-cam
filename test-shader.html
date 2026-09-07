@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>シェーダ検証</title>
+<style>
+  body { background:#181818; color:#ddd; font-family:sans-serif; margin:0; padding:14px; }
+  h1 { font-size:15px; margin:0 0 4px; }
+  p  { font-size:12px; color:#999; margin:0 0 12px; }
+  .row { display:flex; gap:14px; flex-wrap:wrap; }
+  figure { margin:0; }
+  figcaption { font-size:12px; color:#aaa; margin-top:5px; text-align:center; }
+  canvas { border:1px solid #444; display:block; width:370px; height:493px; image-rendering:auto; }
+  #log { margin-top:14px; font-size:12px; white-space:pre-wrap; color:#7ee; }
+</style>
+</head>
+<body>
+<h1>シェーダ検証</h1>
+<p>左上＝赤 / 右下＝青。向きが変わっていなければ座標系は正しい。<br>
+中央の暗い横線がぼけずに残っていれば、輪郭を保つ処理が効いている。</p>
+
+<div class="row">
+  <figure><canvas id="c-src"></canvas><figcaption>① 元画像</figcaption></figure>
+  <figure><canvas id="c-bypass"></canvas><figcaption>② 無加工で通す</figcaption></figure>
+  <figure><canvas id="c-beauty"></canvas><figcaption>③ 補正あり</figcaption></figure>
+  <figure><canvas id="c-mask"></canvas><figcaption>④ 肌の判定</figcaption></figure>
+</div>
+<div id="log"></div>
+
+<script type="module">
+import { Renderer, DEFAULT_PARAMS } from './js/renderer.js';
+
+const W = 480, H = 640;
+const log = (m) => { document.getElementById('log').textContent += m + '\n'; };
+
+// --- テスト用の元画像を作る ---
+const src = document.getElementById('c-src');
+src.width = W; src.height = H;
+const ctx = src.getContext('2d');
+
+ctx.fillStyle = '#e8c0a8';            // 肌色の面
+ctx.fillRect(0, 0, W, H);
+
+const img = ctx.getImageData(0, 0, W, H);   // 細かいノイズ＝肌の質感の代わり
+for (let i = 0; i < img.data.length; i += 4) {
+  const n = (Math.random() - 0.5) * 46;
+  img.data[i] += n; img.data[i+1] += n; img.data[i+2] += n;
+}
+ctx.putImageData(img, 0, 0);
+
+ctx.fillStyle = '#ff2020'; ctx.fillRect(12, 12, 70, 70);          // 左上の目印
+ctx.fillStyle = '#2040ff'; ctx.fillRect(W-82, H-82, 70, 70);      // 右下の目印
+ctx.fillStyle = '#1a0e0e'; ctx.fillRect(90, 300, 300, 14);        // 暗い横線（輪郭）
+ctx.fillStyle = '#3b2b22'; ctx.fillRect(150, 200, 60, 26);        // 目に見立てた濃い部分
+
+// --- 3パターンを描画 ---
+function render(canvasId, params) {
+  const cv = document.getElementById(canvasId);
+  const r = new Renderer(cv);
+  r.init();
+  r.resize(W, H, 0.5);
+  r.draw(src, params);
+  return r;
+}
+
+try {
+  render('c-bypass', { bypass: true });
+  log('② 無加工: OK');
+
+  render('c-beauty', {
+    ...DEFAULT_PARAMS, smooth: 0.95, detail: 0.30, radius: 8,
+    sigmaColor: 0.16, brightness: 0.05, skinTone: 0.15,
+  });
+  log('③ 補正: OK');
+
+  render('c-mask', { ...DEFAULT_PARAMS, maskOnly: true });
+  log('④ マスク: OK（白い部分を肌と判定している）');
+
+  log('シェーダのコンパイル・4パス描画すべて成功');
+} catch (e) {
+  log('失敗: ' + e.message);
+}
+</script>
+</body>
+</html>

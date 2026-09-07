@@ -1,0 +1,10 @@
+# 編集前のバックアップ（作業用・公開不要）
+*.bak
+*.bak2
+*.bak3
+*.bak[0-9]
+
+# OS が作るファイル
+Thumbs.db
+desktop.ini
+.DS_Store
