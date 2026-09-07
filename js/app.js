@@ -246,10 +246,9 @@ async function capture() {
   el.pvScroll.classList.remove('actual');
   el.btnZoom.textContent = '等倍で見る';
 
-  // 純正カメラと同じく、直前の一枚を隅に残す。
+  // 直前の一枚を隅に残す。
   // 「撮ったらすぐ保存」でプレビューを飛ばしたときの、写真への戻り道にもなる。
-  el.thumbImg.src = state.shot.url;
-  el.thumb.classList.remove('hidden');
+  showThumb(state.shot.url);
 
   // 「撮ったらすぐ保存」がオンなら、プレビューを挟まずに保存へ進む。
   // 保存しきれなかった場合（iOS で共有シートが弾かれた、ユーザーがやめた）は
@@ -362,6 +361,32 @@ function showError(e) {
   el.err.classList.remove('hidden');
 }
 
+/* ---------------- 直前の一枚 ---------------- */
+
+// 出しっぱなしにせず、しばらくしたら消す。
+// 純正の「カメラ」アプリのサムネイルは消えないが（ギャラリーへの入口を兼ねるため）、
+// このアプリでは画面を広く使いたいので、スクリーンショットのサムネイルに近い挙動にした。
+const THUMB_MS = 5000;
+const THUMB_FADE_MS = 600;
+
+let thumbShow = null, thumbHide = null;
+
+function showThumb(url) {
+  clearTimeout(thumbShow); clearTimeout(thumbHide);
+  el.thumbImg.src = url;
+  el.thumb.classList.remove('hidden', 'fade');
+  thumbShow = setTimeout(() => {
+    el.thumb.classList.add('fade');
+    thumbHide = setTimeout(() => el.thumb.classList.add('hidden'), THUMB_FADE_MS);
+  }, THUMB_MS);
+}
+
+// 消えかけを掴まれたときは、いったん止めて出したままにする
+function holdThumb() {
+  clearTimeout(thumbShow); clearTimeout(thumbHide);
+  el.thumb.classList.remove('fade');
+}
+
 /* ---------------- セルフタイマー ---------------- */
 
 const TIMERS = [0, 3, 5, 10];   // オフ → 3秒 → 5秒 → 10秒 の順に巡回する
@@ -412,7 +437,9 @@ el.btnShutter.addEventListener('click', () => {
 });
 
 el.thumb.addEventListener('click', () => {
-  if (state.shot) el.preview.classList.remove('hidden');
+  if (!state.shot) return;
+  holdThumb();                       // 見ている間は消さない
+  el.preview.classList.remove('hidden');
 });
 el.btnStop.addEventListener('click', () => {
   stopCamera();
@@ -428,7 +455,10 @@ el.btnFlip.addEventListener('click', () => {
 });
 el.selRes.addEventListener('change', () => { if (state.running) startCamera(); });
 
-el.btnBack.addEventListener('click', () => el.preview.classList.add('hidden'));
+el.btnBack.addEventListener('click', () => {
+  el.preview.classList.add('hidden');
+  if (state.shot) showThumb(state.shot.url);   // 戻ったら数え直す
+});
 el.btnZoom.addEventListener('click', () => {
   const actual = el.pvScroll.classList.toggle('actual');
   el.btnZoom.textContent = actual ? '画面に合わせる' : '等倍で見る';

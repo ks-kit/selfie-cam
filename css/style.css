@@ -206,6 +206,10 @@ button.tiny { padding: 6px 12px; font-size: 12px; }
 #thumb.hidden { display: none; }
 #thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
 
+/* しばらく置いてから、ふわっと縮みながら消える */
+#thumb { transition: opacity .55s ease, transform .55s ease; }
+#thumb.fade { opacity: 0; transform: scale(.86); }
+
 /* タイマーが入っているときは、シャッターが「中止」も兼ねることを色で示す */
 .shutter.counting { background: #c63737; border-color: #e0a0a0; }
 
