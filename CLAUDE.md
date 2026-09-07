@@ -1,6 +1,6 @@
 # 美顔カメラアプリ — 作業の引き継ぎ
 
-最終更新: 2026-09-07（医院PC ROOM2F で作成）
+最終更新: 2026-09-07（医院PC ROOM2F で作成 / 同日 家KS で環境セットアップを追記）
 
 ## これは何か
 
@@ -49,7 +49,11 @@ PWA なら課金ゼロ・Mac 不要・審査なしで、iPhone と Android が 1
 
 ### 1. GitHub CLI の認証（そのPCで初回のみ）
 
-認証情報は PC ごとに保存されるため、医院PC で認証済みでも家KSでは改めて必要。
+認証情報は PC ごとに保存されるため、PC ごとに一度ずつ必要。
+
+**家KS（`DESKTOP-C8E115C`）は 2026-09-07 に設定済み**（gh 2.100.0）。
+`git:https://github.com` が Windows 資格情報に保存され、push が通ることを確認済み。
+**家KSでこの手順を繰り返す必要はない。** 以下はまだ認証していないPCで行う。
 
 ```
 winget install --id GitHub.cli --accept-source-agreements --accept-package-agreements
@@ -64,6 +68,10 @@ gh auth login --hostname github.com --git-protocol https --web
 - `Authenticate Git with your GitHub credentials?` → **Y**
 - 表示されたワンタイムコードをメモして Enter → ブラウザでコードを入力 → Authorize
 - `✓ Logged in as ks-kit` と出れば完了
+
+認証できたかは `gh auth status` と `git push --dry-run origin main` で確認できる。
+認証を担うのは gh 自身ではなく Git Credential Manager（`C:\Program Files\Git\etc\gitconfig` の `credential.helper = manager`）で、
+`gh auth login` の途中の `Authenticate Git with your GitHub credentials?` に **Y** と答えるとそこへ認証情報が渡る。ここを N にすると push だけ通らない。
 
 ### 2. ローカルサーバーを立てる
 
