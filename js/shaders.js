@@ -174,6 +174,13 @@ ${SKIN_GLSL}
 // 持ち上げの上限（明るさ）。これが無いと鼻の穴や口の線まで浮く。
 const float LIFT_MAX = 0.20;
 
+// 常に残す陰影の量。
+//
+// 鼻の脇・あごの下・頬の丸みといった自然な陰影も「周囲の肌より暗い」ので、
+// 素直に持ち上げると顔から立体感が消えて平べったくなる。
+// この量までの暗さは陰影とみなして手を付けず、それを超えた分だけを戻す。
+const float SHADE_KEEP = 0.05;
+
 void main() {
   vec3 orig = texture(u_orig, v_uv).rgb;
   vec3 blur = texture(u_blur, v_uv).rgb;
@@ -218,8 +225,10 @@ void main() {
   float crBase = (base.r - yBase) * 0.713 + 0.5;
   float redGuard = 1.0 - smoothstep(0.010, 0.045, crCol - crBase);
 
-  // 平均より暗い分を、上限つきで持ち上げる（暗くはしない）
-  col += min(max(yBase - yCol, 0.0), LIFT_MAX) * u_shadow * guard * redGuard;
+  // 平均より暗い分のうち、自然な陰影ぶんを差し引いた残りだけを持ち上げる。
+  // 差し引きにしてあるので、強い影ほど多く戻りつつ、陰影の順序は保たれる。
+  float excess = max(yBase - yCol - SHADE_KEEP, 0.0);
+  col += min(excess, LIFT_MAX) * u_shadow * guard * redGuard;
 
   // 色みだけを周囲の肌へ寄せる（明るさは変えない）。
   // 周囲より彩度が低い画素だけを対象にするのが要点。

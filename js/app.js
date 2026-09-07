@@ -37,15 +37,15 @@ const RES = {
 // ぼかしが肌に集中するようになったため、以前の低い値では肌がのっぺりしすぎる。
 const PRESETS = {
   off:     { smooth: 0.00, detail: 0.45, brightness: 0.00, contrast: 0.00, saturation:  0.00, warmth:  0.00, skinTone: 0.00, shadow: 0.00, even: 0.00, radius:  6 },
-  light:   { smooth: 0.55, detail: 0.60, brightness: 0.06, contrast: 0.02, saturation:  0.02, warmth:  0.02, skinTone: 0.10, shadow: 0.20, even: 0.15, radius:  6 },
-  natural: { smooth: 0.85, detail: 0.48, brightness: 0.11, contrast: 0.03, saturation:  0.03, warmth:  0.03, skinTone: 0.18, shadow: 0.40, even: 0.30, radius:  8 },
-  strong:  { smooth: 1.00, detail: 0.34, brightness: 0.15, contrast: 0.04, saturation:  0.05, warmth:  0.04, skinTone: 0.28, shadow: 0.62, even: 0.50, radius: 11 },
-  fair:    { smooth: 0.88, detail: 0.48, brightness: 0.20, contrast: 0.02, saturation: -0.04, warmth: -0.08, skinTone: 0.38, shadow: 0.45, even: 0.35, radius:  8 },
-  warm:    { smooth: 0.88, detail: 0.48, brightness: 0.12, contrast: 0.03, saturation:  0.14, warmth:  0.20, skinTone: 0.22, shadow: 0.40, even: 0.35, radius:  8 },
+  light:   { smooth: 0.55, detail: 0.60, brightness: 0.06, contrast: 0.02, saturation:  0.02, warmth:  0.02, skinTone: 0.10, shadow: 0.15, even: 0.10, radius:  6 },
+  natural: { smooth: 0.85, detail: 0.48, brightness: 0.11, contrast: 0.03, saturation:  0.03, warmth:  0.03, skinTone: 0.18, shadow: 0.30, even: 0.18, radius:  8 },
+  strong:  { smooth: 1.00, detail: 0.34, brightness: 0.15, contrast: 0.04, saturation:  0.05, warmth:  0.04, skinTone: 0.28, shadow: 0.50, even: 0.32, radius: 11 },
+  fair:    { smooth: 0.88, detail: 0.48, brightness: 0.20, contrast: 0.02, saturation: -0.04, warmth: -0.08, skinTone: 0.38, shadow: 0.35, even: 0.20, radius:  8 },
+  warm:    { smooth: 0.88, detail: 0.48, brightness: 0.12, contrast: 0.03, saturation:  0.14, warmth:  0.20, skinTone: 0.22, shadow: 0.30, even: 0.20, radius:  8 },
 };
 
 // プリセットの数値を変えたので、保存済みの旧設定は読み込まないようキーを上げる
-const STORE_KEY = 'beautycam.v4';
+const STORE_KEY = 'beautycam.v5';
 
 const state = {
   stream: null,
