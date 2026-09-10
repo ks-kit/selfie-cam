@@ -234,6 +234,8 @@ git push
   このタップだけは消せない。だからボタンを狙わなくてよいようにした）
 - **Android は2回目以降タップ不要**（2026-09-10 に SH-M29 で確認）。
   初回だけボタンが要る。iPhone は毎回必要
+- **バックグラウンドに回ると発熱対策でカメラを止め、戻ったら開き直す。**
+  再開処理が無かったため、以前は開き直すたびにタップが要る状態だった
 
 ## 🔴 値を変えたら STORE_KEY と CACHE を上げる
 
@@ -242,7 +244,7 @@ git push
 | ファイル | 定数 | 2026-09-08 時点 |
 |---|---|---|
 | `js/app.js` | `STORE_KEY` | `beautycam.v10` |
-| `sw.js` | `CACHE` | `selfie-cam-v14` |
+| `sw.js` | `CACHE` | `selfie-cam-v18` |
 
 > この表は上げるたびに古くなる。**迷ったら実ファイルを見ること**
 > （`grep "STORE_KEY = " js/app.js` / `grep "CACHE = " sw.js`）。
@@ -278,6 +280,13 @@ adb -s <id> shell input tap <x> <y>         # 操作する
 - **ローカルで CSS や JS を変えたら、まずブラウザのキャッシュを疑う。**
   `python -m http.server` は `Cache-Control` を返さないため、古いファイルが効き続ける。
   `await fetch('css/style.css', {cache:'reload'})` してからリロードすること。
+- 🔴 **公開側も同じ罠がある。GitHub Pages は `Cache-Control: max-age=600` を返す。**
+  Service Worker の取得を条件付きリクエスト（`cache: 'no-cache'`）にして対処済み
+  （2026-09-10）。それ以前は **push した更新が実機に最大10分届かなかった**。
+  実機で「直したのに変わらない」ときは、まずこれを疑う。
+- 🔴 **実機を adb で操作するときは、毎回 `screencap` で画面を確認してからタップする。**
+  座標を固定して連続タップすると、画面ロックや別アプリに当たって事故る
+  （2026-09-10 に Google レンズを開いて権限ダイアログを出した）。
 - 🔴 **iOS の長押しメニュー（callout）は `contextmenu` の `preventDefault` では止まらない。**
   画面の長押しは「補正前と見比べる」操作に使っているが、iOS ではコピー・画像保存の
   メニューが割り込む。`css/style.css` の先頭で `-webkit-touch-callout: none` を掛けて切ってある。
