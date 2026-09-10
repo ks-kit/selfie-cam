@@ -160,7 +160,12 @@ async function startCamera({ auto = false, note = '' } = {}) {
   try { await el.video.play(); }
   catch (e) { auto ? showStart(`再生失敗 ${e?.name || ''} ${note}`) : showError(e); return; }
 
-  await waitForVideoSize();
+  // 寸法が取れないまま進むと canvas が 0 になり、真っ黒でボタンも出ない
+  // 手詰まりの状態になる。失敗として扱って操作できる画面に戻す。
+  if (!(await waitForVideoSize())) {
+    auto ? showStart('映像が来ない') : showError({ name: 'NotReadableError' });
+    return;
+  }
 
   const s = state.track.getSettings();
   const vw = el.video.videoWidth, vh = el.video.videoHeight;
@@ -216,15 +221,29 @@ async function tryAutoStart() {
   await startCamera({ auto: true, note: `権限=${p} 実績=${rec}` });
 }
 
-// videoWidth が 0 のまま描画すると真っ黒になるので、確定するまで待つ
+// videoWidth が 0 のまま描画すると真っ黒になるので、確定するまで待つ。
+// 確定したら true、時間切れなら false を返す。
+//
+// 🔴 rAF で待ってはいけない。ページが隠れている間 rAF は止まるので、
+// 復帰の途中で呼ばれると時間切れの判定すら動かず、そのまま固まる。
+// setTimeout と loadedmetadata で待つ。
 function waitForVideoSize(timeout = 4000) {
   return new Promise((resolve) => {
-    const t0 = performance.now();
-    const check = () => {
-      if (el.video.videoWidth > 0 || performance.now() - t0 > timeout) return resolve();
-      requestAnimationFrame(check);
+    if (el.video.videoWidth > 0) return resolve(true);
+
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      clearInterval(poll);
+      clearTimeout(limit);
+      el.video.removeEventListener('loadedmetadata', onMeta);
+      resolve(ok);
     };
-    check();
+    const onMeta = () => { if (el.video.videoWidth > 0) finish(true); };
+    el.video.addEventListener('loadedmetadata', onMeta);
+    const poll = setInterval(() => { if (el.video.videoWidth > 0) finish(true); }, 100);
+    const limit = setTimeout(() => finish(el.video.videoWidth > 0), timeout);
   });
 }
 
