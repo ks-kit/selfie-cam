@@ -32,6 +32,11 @@
   <div id="stage">
     <canvas id="view"></canvas>
     <div id="hint">長押しで補正前と見比べ</div>
+
+    <!-- カメラを開いている間の表示。
+         canvas には前回の最後の1枚が残るので（撮影で中身を読むため消せない）、
+         覆っておかないと「固まった」ように見える。 -->
+    <div id="preparing" class="hidden"><span>カメラを準備中…</span></div>
     <button id="btn-timer">タイマー</button>
     <button id="btn-look">色味</button>
 

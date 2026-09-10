@@ -25,6 +25,7 @@ const el = {
   btnTimer: $('btn-timer'), countdown: $('countdown'), cdNum: $('cd-num'),
   thumb: $('thumb'), thumbImg: $('thumb-img'),
   btnLook: $('btn-look'), looks: $('looks'), lookList: $('look-list'), lookAmount: $('look-amount'),
+  preparing: $('preparing'),
 };
 
 // 要求する解像度。実際に返る値は端末とブラウザ次第なので必ず表示して確認する。
@@ -126,6 +127,11 @@ async function startCamera({ auto = false, note = '' } = {}) {
   state.pausedByHide = false;
   setState('起動中…');
 
+  // 開くまでの間は「準備中」で覆う。前回の最後の1枚が残っていて、
+  // そのままだと固まったように見えるため。
+  el.startOverlay.classList.add('hidden');
+  el.preparing.classList.remove('hidden');
+
   const want = RES[el.selRes.value];
 
   // facingMode は exact で狙い、通らない端末では ideal に落とす
@@ -177,6 +183,7 @@ async function startCamera({ auto = false, note = '' } = {}) {
 
 function showStart(reason) {
   stopCamera();
+  el.preparing.classList.add('hidden');
   setState(reason ? `待機中（自動失敗: ${reason}）` : '待機中');
   el.err.classList.add('hidden');
   el.startOverlay.classList.remove('hidden');
@@ -392,10 +399,12 @@ function setState(s) { el.state.textContent = s; }
 function hideOverlays() {
   el.startOverlay.classList.add('hidden');
   el.err.classList.add('hidden');
+  el.preparing.classList.add('hidden');
 }
 
 function showError(e) {
   stopCamera();
+  el.preparing.classList.add('hidden');
   setState('エラー');
   const map = {
     NotAllowedError: ['カメラの使用が許可されませんでした',

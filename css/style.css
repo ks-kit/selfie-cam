@@ -190,6 +190,19 @@ button.tiny { padding: 6px 12px; font-size: 12px; }
 .tune-body output { font-size: 12px; color: #4fd1c5; text-align: right; font-variant-numeric: tabular-nums; }
 .tune-body input[type=range] { width: 100%; accent-color: #0a7ea4; height: 26px; }
 
+/* ---- カメラを開いている間 ---- */
+#preparing {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.82);
+  color: #ccc; font-size: 14px;
+  pointer-events: none;      /* 開くまでの間に触っても邪魔しない */
+  z-index: 8;
+}
+#preparing.hidden { display: none; }
+#preparing span { animation: prep-pulse 1.2s ease-in-out infinite; }
+@keyframes prep-pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+
 /* ---- セルフタイマー ---- */
 /* 純正カメラと同じく映像の上に浮かせる。コントロール側の幅を食わないため。 */
 #btn-timer {
