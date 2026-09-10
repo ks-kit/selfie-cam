@@ -55,6 +55,12 @@ const PRESETS = {
 // プリセットの数値を変えたので、保存済みの旧設定は読み込まないようキーを上げる
 const STORE_KEY = 'beautycam.v10';
 
+// 「一度でもカメラを開けたか」だけは STORE_KEY と分けて持つ。
+// これは設定ではなく端末の実績なので、プリセットの値を変えて STORE_KEY を上げるたびに
+// 消えてしまうと、そのたび初回扱いになって自動起動が1回分効かなくなる。
+// （2026-09-10 に実機で確認。Android で「自動起動しない」と見えたのはこれが原因だった）
+const CAM_OK_KEY = 'beautycam.camOk';
+
 const state = {
   stream: null,
   track: null,
@@ -164,7 +170,7 @@ async function startCamera({ auto = false, note = '' } = {}) {
   loop();
 
   // 一度開けたので、次回からはボタンを挟まずに試してよい
-  if (!state.camOk) { state.camOk = true; persist(); }
+  if (!state.camOk) rememberCamOk();
 }
 
 function showStart(reason) {
@@ -597,7 +603,6 @@ function persist() {
       diag: el.chkDiag.checked,
       quick: el.chkQuick.checked,
       face: el.chkFace.checked,
-      camOk: state.camOk,
       timer: state.timer,
       look: state.look,
       lookAmount: state.lookAmount,
@@ -605,8 +610,14 @@ function persist() {
   } catch (_) { /* 保存できない環境でも動作には支障がないので無視する */ }
 }
 
+function rememberCamOk() {
+  state.camOk = true;
+  try { localStorage.setItem(CAM_OK_KEY, '1'); } catch (_) { /* 保存できなくても動作には支障がない */ }
+}
+
 function restore() {
   let d = null;
+  try { state.camOk = localStorage.getItem(CAM_OK_KEY) === '1'; } catch (_) {}
   try { d = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); } catch (_) {}
   if (d) {
     state.my = d.my || null;
@@ -617,7 +628,7 @@ function restore() {
     if (typeof d.diag === 'boolean') el.chkDiag.checked = d.diag;
     if (typeof d.quick === 'boolean') el.chkQuick.checked = d.quick;
     if (typeof d.face === 'boolean') el.chkFace.checked = d.face;
-    if (typeof d.camOk === 'boolean') state.camOk = d.camOk;
+    if (typeof d.camOk === 'boolean' && d.camOk) rememberCamOk();   // 旧形式からの引き継ぎ
     if (TIMERS.includes(d.timer)) state.timer = d.timer;
     if (Number.isInteger(d.look) && d.look >= 0 && d.look < LOOK_NAMES.length) state.look = d.look;
     if (typeof d.lookAmount === 'number') state.lookAmount = d.lookAmount;
