@@ -5,7 +5,7 @@
 // 古い app.js が residual で残り、実機で「直したのに変わらない」が起きる）。
 // オフラインでも起動できるよう、取得に成功したものは都度キャッシュへ写す。
 
-const CACHE = 'selfie-cam-v17';
+const CACHE = 'selfie-cam-v18';
 
 const PRECACHE = [
   './',
@@ -42,8 +42,15 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   if (new URL(req.url).origin !== self.location.origin) return;
 
+  // GitHub Pages は Cache-Control: max-age=600 を返すため、素直に fetch すると
+  // 最大10分は端末側のキャッシュが返り、push した更新が実機に届かない。
+  // 条件付きリクエスト（no-cache）にして必ずサーバへ確認しに行く。
+  // 変わっていなければ 304 が返るだけなので転送量はほとんど増えない。
+  let request = req;
+  try { request = new Request(req, { cache: 'no-cache' }); } catch (_) { /* 作れない要求はそのまま */ }
+
   e.respondWith(
-    fetch(req)
+    fetch(request)
       .then((res) => {
         if (res && res.ok) {
           const copy = res.clone();
