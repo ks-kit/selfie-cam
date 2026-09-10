@@ -68,6 +68,7 @@ const state = {
   running: false,
   camOk: false,       // 一度でもカメラを開けたか。次回の自動起動の判断に使う
   timer: 0,           // セルフタイマーの秒数。0 はオフ
+  pausedByHide: false, // バックグラウンドに回ったせいで止めたのか（＝戻ったら再開してよいか）
   look: 0,            // 色味フィルター。0 はなし
   lookAmount: 1.0,    // 色味の強さ
   rafId: null,
@@ -122,6 +123,7 @@ async function enableFace() {
 // 断られてもエラー画面は出さず、起動ボタンに戻すだけにする。
 async function startCamera({ auto = false, note = '' } = {}) {
   stopCamera();
+  state.pausedByHide = false;
   setState('起動中…');
 
   const want = RES[el.selRes.value];
@@ -552,12 +554,24 @@ el.btnZoom.addEventListener('click', () => {
 el.btnSave.addEventListener('click', save);
 el.btnShare.addEventListener('click', share);
 
-// タブが隠れている間はカメラを止めて発熱と電池を抑える
+// 隠れている間はカメラを止めて発熱と電池を抑え、戻ってきたら開き直す。
+//
+// 止めるだけで再開しなかったため、ホームに戻して開き直すたびに
+// 起動画面が出てタップが要る状態になっていた（2026-09-10 に実機で判明）。
+// 「自分で止めたときだけ」再開する。利用者が「停止」を押した場合は勝手に開かない。
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && state.running) {
+  if (document.hidden) {
+    if (!state.running) return;
     stopCamera();
+    state.pausedByHide = true;
     setState('中断（バックグラウンド）');
     el.startOverlay.classList.remove('hidden');
+    return;
+  }
+  if (state.pausedByHide) {
+    state.pausedByHide = false;
+    // 断られたら起動画面に戻るだけなので、試すこと自体に副作用はない
+    startCamera({ auto: true, note: '復帰' });
   }
 });
 

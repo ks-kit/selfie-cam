@@ -43,7 +43,7 @@ html, body {
 #diag b { display: block; color: #7a7a7a; font-weight: 400; font-size: 12px; }
 #diag span { display: block; font-size: 16px; font-weight: 600; color: #4fd1c5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* 状態だけは自動起動の理由が入って長くなるので、省略せず折り返す */
-#d-state { white-space: normal; overflow: visible; text-overflow: clip; font-size: 13px; line-height: 1.25; }
+#diag #d-state { white-space: normal; overflow: visible; text-overflow: clip; font-size: 13px; line-height: 1.25; }
 
 /* ---- プレビュー領域 ---- */
 #stage { flex: 1 1 auto; position: relative; min-height: 0; background: #000; }
