@@ -565,7 +565,9 @@ document.addEventListener('visibilitychange', () => {
     stopCamera();
     state.pausedByHide = true;
     setState('中断（バックグラウンド）');
-    el.startOverlay.classList.remove('hidden');
+    // 起動画面はここでは出さない。戻ったら開き直すので、出すと復帰までの
+    // 1〜2秒だけボタンが見えて「押さないと駄目なのか」と紛らわしい。
+    // 開き直しに失敗したときは showStart() が出す。
     return;
   }
   if (state.pausedByHide) {
