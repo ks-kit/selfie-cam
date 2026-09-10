@@ -114,7 +114,7 @@ async function enableFace() {
 
 // auto = true は「ボタンを押さずに試している」状態。
 // 断られてもエラー画面は出さず、起動ボタンに戻すだけにする。
-async function startCamera({ auto = false } = {}) {
+async function startCamera({ auto = false, note = '' } = {}) {
   stopCamera();
   setState('起動中…');
 
@@ -137,14 +137,14 @@ async function startCamera({ auto = false } = {}) {
       if (e.name === 'NotAllowedError' || e.name === 'SecurityError') break;
     }
   }
-  if (!stream) { auto ? showStart() : showError(lastErr); return; }
+  if (!stream) { auto ? showStart(`${lastErr?.name || '取得失敗'} ${note}`) : showError(lastErr); return; }
 
   state.stream = stream;
   state.track = stream.getVideoTracks()[0];
   el.video.srcObject = stream;
 
   try { await el.video.play(); }
-  catch (e) { auto ? showStart() : showError(e); return; }
+  catch (e) { auto ? showStart(`再生失敗 ${e?.name || ''} ${note}`) : showError(e); return; }
 
   await waitForVideoSize();
 
@@ -167,9 +167,9 @@ async function startCamera({ auto = false } = {}) {
   if (!state.camOk) { state.camOk = true; persist(); }
 }
 
-function showStart() {
+function showStart(reason) {
   stopCamera();
-  setState('待機中');
+  setState(reason ? `待機中（自動失敗: ${reason}）` : '待機中');
   el.err.classList.add('hidden');
   el.startOverlay.classList.remove('hidden');
 }
@@ -186,9 +186,19 @@ async function tryAutoStart() {
   } catch (_) {
     // Safari は camera を照会できない。過去に開けた記録の方で判断する。
   }
-  if (perm === 'denied') return;                       // 明示的に拒否されている
-  if (perm !== 'granted' && !state.camOk) return;      // 初回は必ずボタンから
-  await startCamera({ auto: true });
+
+  // 起動ボタンが出ている状態からは「見送った」のか「試して断られた」のかが
+  // 区別できないので、理由を診断バーに残す。実機で追えるようにするため。
+  const p = perm ?? '照会不可';
+  const rec = state.camOk ? 'あり' : 'なし';
+
+  if (perm === 'denied') { setState(`待機中（自動: 権限=拒否）`); return; }
+  if (perm !== 'granted' && !state.camOk) {
+    setState(`待機中（自動: 見送り 権限=${p} 実績=${rec}）`);
+    return;
+  }
+  setState(`起動中…（自動 権限=${p} 実績=${rec}）`);
+  await startCamera({ auto: true, note: `権限=${p} 実績=${rec}` });
 }
 
 // videoWidth が 0 のまま描画すると真っ黒になるので、確定するまで待つ

@@ -239,8 +239,11 @@ git push
 
 | ファイル | 定数 | 2026-09-08 時点 |
 |---|---|---|
-| `js/app.js` | `STORE_KEY` | `beautycam.v9` |
-| `sw.js` | `CACHE` | `selfie-cam-v11` |
+| `js/app.js` | `STORE_KEY` | `beautycam.v10` |
+| `sw.js` | `CACHE` | `selfie-cam-v14` |
+
+> この表は上げるたびに古くなる。**迷ったら実ファイルを見ること**
+> （`grep "STORE_KEY = " js/app.js` / `grep "CACHE = " sw.js`）。
 
 - **`STORE_KEY`** を上げないと、端末に残った古い設定が読み込まれて**新しい既定値が実機に出ない**。
   「直したのに変わらない」の原因はたいていこれ
