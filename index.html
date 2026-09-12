@@ -149,6 +149,19 @@
     </div>
   </div>
 
+  <!-- Android で初めて保存したときだけ出る案内。
+       人に配ったとき「写真がどこへ行ったか分からない」となるのを防ぐため。 -->
+  <div id="saved-note" class="hidden">
+    <div class="note-card">
+      <h2>写真を保存しました</h2>
+      <p>ギャラリーの <b>「Download」</b> アルバムに入っています。</p>
+      <p class="sub">カメラで撮った写真と一緒に並べたいときは<br>
+        Google フォト → ライブラリ → デバイス内の写真 →<br>
+        <b>Download</b> → バックアップをオン</p>
+      <button id="btn-saved-note" class="big">わかった</button>
+    </div>
+  </div>
+
   <div id="toast" class="hidden"></div>
 
 </div>

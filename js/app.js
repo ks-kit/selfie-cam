@@ -26,6 +26,7 @@ const el = {
   thumb: $('thumb'), thumbImg: $('thumb-img'),
   btnLook: $('btn-look'), looks: $('looks'), lookList: $('look-list'), lookAmount: $('look-amount'),
   preparing: $('preparing'),
+  savedNote: $('saved-note'), btnSavedNote: $('btn-saved-note'),
 };
 
 // 要求する解像度。実際に返る値は端末とブラウザ次第なので必ず表示して確認する。
@@ -61,6 +62,10 @@ const STORE_KEY = 'beautycam.v10';
 // 消えてしまうと、そのたび初回扱いになって自動起動が1回分効かなくなる。
 // （2026-09-10 に実機で確認。Android で「自動起動しない」と見えたのはこれが原因だった）
 const CAM_OK_KEY = 'beautycam.camOk';
+
+// 「保存先の案内をもう見た」記録。STORE_KEY とは分けてある。
+// 版を上げるたびに出し直すと、使い慣れた人にも毎回出てしまうため。
+const SAVE_NOTE_KEY = 'beautycam.savedNote';
 
 const state = {
   stream: null,
@@ -370,6 +375,7 @@ async function storeShot() {
     document.body.appendChild(a);
     a.click();
     a.remove();
+    maybeShowSavedNote();
     return 'ok';
   } catch (_) { return 'blocked'; }
 }
@@ -396,6 +402,14 @@ async function share() {
   }
   try { await navigator.share({ files: [file] }); }
   catch (e) { if (e.name !== 'AbortError') toast('共有できませんでした'); }
+}
+
+// 保存先の案内。初めてダウンロードで保存できたときだけ出す。
+// iOS は共有シートでカメラロールに入るので出さない。
+function maybeShowSavedNote() {
+  if (IS_IOS) return;
+  try { if (localStorage.getItem(SAVE_NOTE_KEY) === '1') return; } catch (_) { return; }
+  el.savedNote.classList.remove('hidden');
 }
 
 let toastTimer = null;
@@ -578,6 +592,10 @@ el.btnBack.addEventListener('click', () => {
 el.btnZoom.addEventListener('click', () => {
   const actual = el.pvScroll.classList.toggle('actual');
   el.btnZoom.textContent = actual ? '画面に合わせる' : '等倍で見る';
+});
+el.btnSavedNote.addEventListener('click', () => {
+  el.savedNote.classList.add('hidden');
+  try { localStorage.setItem(SAVE_NOTE_KEY, '1'); } catch (_) { /* 保存できなくても支障はない */ }
 });
 el.btnSave.addEventListener('click', save);
 el.btnShare.addEventListener('click', share);
