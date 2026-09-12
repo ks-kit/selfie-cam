@@ -27,6 +27,7 @@ export const DEFAULT_PARAMS = {
   skinTone: 0.0,
   shadow: 0.0,      // 髭・くま・くすみの持ち上げ
   even: 0.0,        // 色ムラの平均化
+  zoom: 1.0,        // デジタルズーム（1.0 で等倍）
   look: 0,          // 色味フィルターの種類（0 = なし）
   lookAmount: 1.0,  // その強さ
   radius: 6.0,      // ぼかし半径（低解像度側の画素数）
@@ -66,7 +67,7 @@ export class Renderer {
     if (!gl) throw new Error('WEBGL2_UNSUPPORTED');
     this.gl = gl;
 
-    this.prog.copy      = this._program(VERT_SOURCE, FRAG_PASSTHROUGH, ['u_tex', 'u_flipX']);
+    this.prog.copy      = this._program(VERT_SOURCE, FRAG_PASSTHROUGH, ['u_tex', 'u_flipX', 'u_zoom']);
     this.prog.blit      = this._program(VERT_QUAD,   FRAG_PASSTHROUGH, ['u_tex']);
     this.prog.bilateral = this._program(VERT_QUAD,   FRAG_BILATERAL,
       ['u_tex', 'u_texel', 'u_dir', 'u_radius', 'u_sigmaColor']);
@@ -77,7 +78,7 @@ export class Renderer {
       ['u_orig', 'u_blur', 'u_base', 'u_smooth', 'u_detail', 'u_brightness', 'u_contrast',
        'u_saturation', 'u_warmth', 'u_skinTone', 'u_shadow', 'u_even',
        'u_look', 'u_lookAmount', 'u_maskOnly',
-       'u_faceMask', 'u_faceOn', 'u_faceFlip']);
+       'u_faceMask', 'u_faceOn', 'u_faceFlip', 'u_zoom']);
 
     // 画面全体を覆う三角形2枚。全パスで使い回す。
     this.vao = gl.createVertexArray();
@@ -217,6 +218,7 @@ export class Renderer {
     this._bindTarget(this.fbo.orig);
     this._useTexture(this.videoTex, 0, this.prog.copy.u.u_tex);
     gl.uniform1f(this.prog.copy.u.u_flipX, params.flipX ? 1.0 : 0.0);
+    gl.uniform1f(this.prog.copy.u.u_zoom, p.zoom);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
     // 補正なしならそのまま画面へ出して終わり（比較表示・オフ時）
@@ -297,6 +299,7 @@ export class Renderer {
     }
     gl.uniform1f(cp.u.u_faceOn,   faceOn ? 1.0 : 0.0);
     gl.uniform1f(cp.u.u_faceFlip, params.flipX ? 1.0 : 0.0);
+    gl.uniform1f(cp.u.u_zoom,     p.zoom);
 
     gl.uniform1f(cp.u.u_smooth,     p.smooth);
     gl.uniform1f(cp.u.u_detail,     p.detail);

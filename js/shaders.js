@@ -21,10 +21,14 @@ export const VERT_SOURCE = `#version 300 es
 in vec2 a_pos;
 out vec2 v_uv;
 uniform float u_flipX;
+uniform float u_zoom;   // 1.0 で等倍。大きいほど中心を狭く切り出す＝寄る
 void main() {
   vec2 uv = a_pos * 0.5 + 0.5;
   uv.y = 1.0 - uv.y;
   if (u_flipX > 0.5) uv.x = 1.0 - uv.x;
+  // デジタルズーム。中心を基準に切り出す。
+  // プレビューも撮影もこのパスを通るので、見たままが保存される。
+  uv = (uv - 0.5) / max(u_zoom, 0.0001) + 0.5;
   v_uv = uv;
   gl_Position = vec4(a_pos, 0.0, 1.0);
 }`;
@@ -178,6 +182,7 @@ uniform float u_maskOnly;    // 1.0 で肌マスクを可視化（調整用）
 uniform sampler2D u_faceMask;
 uniform float u_faceOn;      // 0 なら顔検出を使わない（従来どおりの動作）
 uniform float u_faceFlip;    // 鏡像表示のときは左右を合わせる
+uniform float u_zoom;        // デジタルズーム。顔マスクの参照位置を映像に合わせるのに使う
 out vec4 fragColor;
 ${SKIN_GLSL}
 // 持ち上げの上限（明るさ）。これが無いと鼻の穴や口の線まで浮く。
@@ -246,6 +251,10 @@ void main() {
   // 鏡像表示のときは x も合わせる。
   if (u_faceOn > 0.5) {
     vec2 fuv = vec2(u_faceFlip > 0.5 ? 1.0 - v_uv.x : v_uv.x, 1.0 - v_uv.y);
+    // 顔マスクは切り出す前の映像から作られている。映像と同じだけ切り出さないと
+    // ズーム時にマスクだけ位置がずれ、唇や目の保護が変な場所に掛かる。
+    // 反転は中心対称なので、掛ける順序は問わない。
+    fuv = (fuv - 0.5) / max(u_zoom, 0.0001) + 0.5;
     mask *= texture(u_faceMask, fuv).r;
   }
 

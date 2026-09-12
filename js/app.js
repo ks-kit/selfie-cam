@@ -27,6 +27,7 @@ const el = {
   btnLook: $('btn-look'), looks: $('looks'), lookList: $('look-list'), lookAmount: $('look-amount'),
   preparing: $('preparing'),
   savedNote: $('saved-note'), btnSavedNote: $('btn-saved-note'),
+  zoomBadge: $('zoom-badge'),
 };
 
 // 要求する解像度。実際に返る値は端末とブラウザ次第なので必ず表示して確認する。
@@ -75,6 +76,7 @@ const state = {
   camOk: false,       // 一度でもカメラを開けたか。次回の自動起動の判断に使う
   timer: 0,           // セルフタイマーの秒数。0 はオフ
   pausedByHide: false, // バックグラウンドに回ったせいで止めたのか（＝戻ったら再開してよいか）
+  zoom: 1.0,          // デジタルズーム。起動のたびに等倍へ戻す（保存しない）
   look: 0,            // 色味フィルター。0 はなし
   lookAmount: 1.0,    // 色味の強さ
   rafId: null,
@@ -130,6 +132,7 @@ async function enableFace() {
 async function startCamera({ auto = false, note = '' } = {}) {
   stopCamera();
   state.pausedByHide = false;
+  setZoom(1.0);            // カメラが変われば画角も変わるので等倍に戻す
   setState('起動中…');
 
   // 開くまでの間は「準備中」で覆う。前回の最後の1枚が残っていて、
@@ -274,6 +277,7 @@ function loop() {
     renderer.draw(el.video, {
       ...state.params,
       look: state.look, lookAmount: state.lookAmount,
+      zoom: state.zoom,
       flipX: el.chkMirrorPreview.checked,
       maskOnly: el.chkMask.checked,
       faceOn: faceOn() && face.hasFace,
@@ -309,6 +313,7 @@ async function capture() {
   renderer.draw(el.video, {
     ...state.params,
     look: state.look, lookAmount: state.lookAmount,
+    zoom: state.zoom,
     flipX: false,
     faceOn: faceOn() && face.hasFace,
     faceSource: face.canvas,
@@ -753,14 +758,55 @@ if (IS_IOS) {
   el.btnSave.textContent = '保存・共有';
 }
 
-// 画面を長押ししている間だけ補正前を表示して見比べられるようにする
+/* ---------------- ズーム ---------------- */
+
+// 4K から切り出すので、2倍までは実用的な画質が残る（1080×1632 相当）。
+// 3倍を超えると粗くなるのでここで止める。
+const ZOOM_MIN = 1.0;
+const ZOOM_MAX = 3.0;
+
+function setZoom(z) {
+  state.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+  const on = state.zoom > 1.005;
+  el.zoomBadge.textContent = `${state.zoom.toFixed(1)}x`;
+  el.zoomBadge.classList.toggle('hidden', !on);
+}
+
+el.zoomBadge.addEventListener('click', () => setZoom(1.0));   // 押したら等倍に戻す
+
+// 画面を長押ししている間だけ補正前を表示して見比べられるようにする。
+// 2本指が触れたらピンチとみなし、長押しの比較はやめる（1本指と2本指で棲み分ける）。
 let pressTimer = null;
-el.canvas.addEventListener('pointerdown', () => {
+const touches = new Map();
+let pinchFrom = 0, zoomFrom = 1;
+
+el.canvas.addEventListener('pointerdown', (e) => {
+  touches.set(e.pointerId, e);
+  if (touches.size >= 2) {
+    clearTimeout(pressTimer);
+    state.comparing = false;
+    const [a, b] = [...touches.values()];
+    pinchFrom = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    zoomFrom = state.zoom;
+    return;
+  }
   clearTimeout(pressTimer);
   pressTimer = setTimeout(() => { state.comparing = true; }, 220);
 });
+
+el.canvas.addEventListener('pointermove', (e) => {
+  if (!touches.has(e.pointerId)) return;
+  touches.set(e.pointerId, e);
+  if (touches.size < 2 || pinchFrom <= 0) return;
+  const [a, b] = [...touches.values()];
+  const now = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  setZoom(zoomFrom * (now / pinchFrom));
+});
+
 ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) =>
-  el.canvas.addEventListener(ev, () => {
+  el.canvas.addEventListener(ev, (e) => {
+    touches.delete(e.pointerId);
+    if (touches.size < 2) pinchFrom = 0;
     clearTimeout(pressTimer);
     state.comparing = false;
   }));
