@@ -164,6 +164,16 @@
     </div>
   </div>
 
+  <!-- ホーム画面への追加の案内。追加済みでアイコンから起動しているときは出ない -->
+  <div id="install-bar" class="hidden" role="status">
+    <div class="ib-text">
+      <b id="ib-title"></b>
+      <span id="ib-body"></span>
+    </div>
+    <button id="ib-action" hidden>追加する</button>
+    <button id="ib-close" aria-label="閉じる">×</button>
+  </div>
+
   <div id="toast" class="hidden"></div>
 
 </div>
@@ -174,6 +184,13 @@
 <script type="module" src="js/app.js"></script>
 
 <script>
+  // 「ホーム画面に追加できる」合図は読み込み直後に一度だけ届く。
+  // app.js（module）は後から動くので取りこぼさないよう、ここで先に受けておく。
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    window.__installEvt = e;
+  });
+
   // Service Worker。インストール可能にするためと、オフライン起動のため。
   // https / localhost 以外では登録できないので、失敗は黙って無視する。
   if ('serviceWorker' in navigator) {

@@ -24,6 +24,15 @@ iPhone と Android の両方で使える、自撮り用の美顔補正カメラ�
 - **Android**: Chrome で開く → 右上の「⋮」→「アプリをインストール」
   （文言は Chrome のバージョンにより「インストール」「ホーム画面に追加」のこともある）
 
+### LINE でリンクを送るとき
+
+**リンクの末尾に `?openExternalBrowser=1` を付ける。** 付けないと LINE の中のブラウザで開き、
+ホーム画面に追加できない。
+
+```
+https://ks-kit.github.io/selfie-cam/?openExternalBrowser=1
+```
+
 ### 写真の保存先
 
 | | 保存先 |

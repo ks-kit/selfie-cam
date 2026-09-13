@@ -28,6 +28,8 @@ const el = {
   preparing: $('preparing'),
   savedNote: $('saved-note'), btnSavedNote: $('btn-saved-note'),
   zoomBadge: $('zoom-badge'),
+  installBar: $('install-bar'), ibTitle: $('ib-title'), ibBody: $('ib-body'),
+  ibAction: $('ib-action'), ibClose: $('ib-close'),
 };
 
 // 要求する解像度。実際に返る値は端末とブラウザ次第なので必ず表示して確認する。
@@ -460,6 +462,77 @@ function showError(e) {
   el.err.classList.remove('hidden');
 }
 
+/* ---------------- ホーム画面への追加の案内 ---------------- */
+
+// ホーム画面のアイコンから起動しているか。このときは何も出さない。
+const IS_STANDALONE = matchMedia('(display-mode: standalone)').matches
+  || matchMedia('(display-mode: fullscreen)').matches
+  || navigator.standalone === true;                       // iOS Safari
+
+// LINE の内蔵ブラウザ。ここからはホーム画面に追加できない。
+// UA は "... Line/13.x.x" の形。/Line/i のように緩くすると別の語に当たりうるので版番号まで見る。
+const IN_LINE = /\bLine\/\d/.test(navigator.userAgent);
+
+// × で閉じたらこの起動の間は出さない。次に開いたときはまた出る（追加してほしいので）。
+const IB_CLOSED_KEY = 'beautycam.installBarClosed';
+
+const INSTALL_TEXT = {
+  // 🔴 ページ側から外部ブラウザへ切り替える手段は無い（openExternalBrowser=1 は
+  // トークでタップしたリンクにしか効かず、JS で遷移しても外に出ない）。手順を案内するしかない。
+  line:    ['LINEの中で開いています',
+            '右上の「⋮」→「ブラウザで開く」を選ぶと、ホーム画面に追加して全画面で使えます'],
+  android: ['ホーム画面に追加できます',
+            '全画面のアプリとして使えます'],
+  ios:     ['ホーム画面に追加できます',
+            '共有ボタン →「ホーム画面に追加」で全画面になります'],
+};
+
+let installEvt = null;
+
+function installBarClosed() {
+  try { return sessionStorage.getItem(IB_CLOSED_KEY) === '1'; } catch (_) { return false; }
+}
+
+function showInstallBar(kind) {
+  if (IS_STANDALONE || installBarClosed()) return;
+  const [title, body] = INSTALL_TEXT[kind];
+  el.ibTitle.textContent = title;
+  el.ibBody.textContent = body;
+  el.ibAction.hidden = kind !== 'android';               // 追加ダイアログを呼べるのは Android だけ
+  el.installBar.classList.remove('hidden');
+}
+
+function hideInstallBar() { el.installBar.classList.add('hidden'); }
+
+// Android（Chrome 系）: ブラウザが「追加できる」と合図してきたときだけ出す。
+// 既に追加済みならブラウザはこの合図を出さないので、ボタンは自然に出ない。
+function onInstallable(e) {
+  installEvt = e;
+  if (!IN_LINE) showInstallBar('android');
+}
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); onInstallable(e); });
+window.addEventListener('appinstalled', () => { installEvt = null; hideInstallBar(); });
+
+el.ibAction.addEventListener('click', async () => {
+  if (!installEvt) return;
+  installEvt.prompt();
+  try { await installEvt.userChoice; } catch (_) {}
+  installEvt = null;                                      // 合図は一度しか使えない
+  hideInstallBar();
+});
+
+el.ibClose.addEventListener('click', () => {
+  hideInstallBar();
+  try { sessionStorage.setItem(IB_CLOSED_KEY, '1'); } catch (_) {}
+});
+
+function initInstallBar() {
+  if (IS_STANDALONE) return;
+  if (IN_LINE) { showInstallBar('line'); return; }
+  if (IS_IOS)  { showInstallBar('ios'); return; }
+  if (window.__installEvt) onInstallable(window.__installEvt);   // 先に届いていた合図
+}
+
 /* ---------------- 色味フィルター ---------------- */
 
 const LOOK_NAMES = ['色味', 'フィルム', 'クリア', 'やわらか', 'ノスタルジー', 'クール', 'モノクロ'];
@@ -835,5 +908,6 @@ el.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   // 前回オンにしていたなら、起動時に読み込んでおく
   if (el.chkFace.checked) enableFace();
   setState('待機中');
+  initInstallBar();
   tryAutoStart();
 })();
