@@ -1,0 +1,1040 @@
+// 美顔カメラ本体。カメラ制御・補正パラメータ・撮影・保存を受け持つ。
+// 補正処理そのものは renderer.js と shaders.js 側にある。
+
+import { Renderer, DEFAULT_PARAMS } from './renderer.js';
+import { FaceMask } from './face.js';
+
+const $ = (id) => document.getElementById(id);
+
+const el = {
+  state: $('d-state'), res: $('d-res'), fps: $('d-fps'), cam: $('d-cam'),
+  canvas: $('view'), video: $('src'),
+  startOverlay: $('start-overlay'), btnStart: $('btn-start'),
+  err: $('err'), errTitle: $('err-title'), errMsg: $('err-msg'), btnRetry: $('btn-retry'),
+  selRes: $('sel-res'),
+  chkMirrorPreview: $('chk-mirror-preview'),
+  btnFlip: $('btn-flip'), btnShutter: $('btn-shutter'), btnStop: $('btn-stop'),
+  preview: $('preview'), pvImg: $('pv-img'), pvScroll: $('pv-scroll'),
+  pvInfo: $('pv-info'), btnBack: $('btn-back'), btnZoom: $('btn-zoom'),
+  btnSave: $('btn-save'), btnShare: $('btn-share'), toast: $('toast'),
+  presets: $('presets'), btnPresetMy: $('btn-preset-my'), hint: $('hint'),
+  tune: $('tune'), btnTuneOpen: $('btn-tune-open'), btnTuneClose: $('btn-tune-close'),
+  btnTuneReset: $('btn-tune-reset'), btnTuneSave: $('btn-tune-save'), chkMask: $('chk-mask'),
+  diag: $('diag'), chkDiag: $('chk-diag'), chkQuick: $('chk-quick'),
+  chkFace: $('chk-face'),
+  btnTimer: $('btn-timer'), countdown: $('countdown'), cdNum: $('cd-num'),
+  thumb: $('thumb'), thumbImg: $('thumb-img'),
+  btnLook: $('btn-look'), looks: $('looks'), lookList: $('look-list'), lookAmount: $('look-amount'),
+  preparing: $('preparing'),
+  savedNote: $('saved-note'), btnSavedNote: $('btn-saved-note'),
+  zoomBadge: $('zoom-badge'),
+  modeSwitch: $('mode-switch'), btnPortrait: $('btn-portrait'), focusRing: $('focus-ring'),
+  installBar: $('install-bar'), ibTitle: $('ib-title'), ibBody: $('ib-body'),
+  ibAction: $('ib-action'), ibClose: $('ib-close'),
+};
+
+// 要求する解像度。実際に返る値は端末とブラウザ次第なので必ず表示して確認する。
+const RES = {
+  max: { w: 3840, h: 2160 },
+  fhd: { w: 1920, h: 1080 },
+  hd:  { w: 1280, h: 720  },
+};
+
+// プリセット。実機で見ながら調整した値（2026-09-07）。
+// 当初の設定は全体に効きが弱かったため一段強くし、
+// 元の「ナチュラル」相当は「ひかえめ」として残してある。
+//
+// detail（質感の戻し量）は 2026-09-07 に引き上げた。肌マスクを締めた分、
+// ぼかしが肌に集中するようになったため、以前の低い値では肌がのっぺりしすぎる。
+//
+// shadow（髭・くま）は実機で詰めて 0.10 に落ち着いた。当初 0.40 では顔が平坦になり、
+// 自然な陰影を守る仕組みを入れたあとでも 0.30 はまだ強かった。効かせすぎない方が良い。
+const PRESETS = {
+  off:     { smooth: 0.00, detail: 0.45, brightness: 0.00, contrast: 0.00, saturation:  0.00, warmth:  0.00, skinTone: 0.00, shadow: 0.00, even: 0.00, radius:  6 },
+  light:   { smooth: 0.55, detail: 0.60, brightness: 0.06, contrast: 0.02, saturation:  0.02, warmth:  0.02, skinTone: 0.10, shadow: 0.06, even: 0.10, radius:  6 },
+  natural: { smooth: 0.85, detail: 0.48, brightness: 0.11, contrast: 0.03, saturation:  0.03, warmth:  0.03, skinTone: 0.18, shadow: 0.10, even: 0.18, radius:  8 },
+  strong:  { smooth: 1.00, detail: 0.34, brightness: 0.15, contrast: 0.04, saturation:  0.05, warmth:  0.04, skinTone: 0.28, shadow: 0.18, even: 0.32, radius: 11 },
+  fair:    { smooth: 0.88, detail: 0.48, brightness: 0.20, contrast: 0.02, saturation: -0.04, warmth: -0.08, skinTone: 0.38, shadow: 0.12, even: 0.20, radius:  8 },
+  warm:    { smooth: 0.88, detail: 0.48, brightness: 0.12, contrast: 0.03, saturation:  0.14, warmth:  0.20, skinTone: 0.22, shadow: 0.10, even: 0.20, radius:  8 },
+
+  // ---- グルメ ----
+  // 肌の補正（smooth / shadow / even / skinTone）は必ず 0。料理の質感を消してしまうため。
+  // 値は合成画像で効き方を確かめただけで、実機の料理ではまだ詰めていない（要調整）。
+  g_off:     { smooth: 0, shadow: 0, even: 0, skinTone: 0, detail: 0.45, radius: 5, clarity: 0.00, vibrance:  0.00, brightness: 0.00, contrast: 0.00, saturation:  0.00, warmth:  0.00, bokeh: 0.85 },
+  g_natural: { smooth: 0, shadow: 0, even: 0, skinTone: 0, detail: 0.45, radius: 5, clarity: 0.35, vibrance:  0.30, brightness: 0.05, contrast: 0.06, saturation:  0.00, warmth:  0.06, bokeh: 0.85 },
+  g_rich:    { smooth: 0, shadow: 0, even: 0, skinTone: 0, detail: 0.45, radius: 5, clarity: 0.55, vibrance:  0.55, brightness: 0.03, contrast: 0.12, saturation:  0.06, warmth:  0.14, bokeh: 0.90 },
+  g_fresh:   { smooth: 0, shadow: 0, even: 0, skinTone: 0, detail: 0.45, radius: 5, clarity: 0.30, vibrance:  0.22, brightness: 0.12, contrast: 0.03, saturation: -0.02, warmth: -0.07, bokeh: 0.80 },
+};
+
+// プリセットの数値を変えたので、保存済みの旧設定は読み込まないようキーを上げる
+const STORE_KEY = 'beautycam-beta.v10';
+
+// 「一度でもカメラを開けたか」だけは STORE_KEY と分けて持つ。
+// これは設定ではなく端末の実績なので、プリセットの値を変えて STORE_KEY を上げるたびに
+// 消えてしまうと、そのたび初回扱いになって自動起動が1回分効かなくなる。
+// （2026-09-10 に実機で確認。Android で「自動起動しない」と見えたのはこれが原因だった）
+const CAM_OK_KEY = 'beautycam-beta.camOk';
+
+// 「保存先の案内をもう見た」記録。STORE_KEY とは分けてある。
+// 版を上げるたびに出し直すと、使い慣れた人にも毎回出てしまうため。
+const SAVE_NOTE_KEY = 'beautycam-beta.savedNote';
+
+const state = {
+  stream: null,
+  track: null,
+  facing: 'user',      // 'user' = インカメラ / 'environment' = アウトカメラ
+  mode: 'selfie',      // 'selfie' = 自撮り / 'gourmet' = グルメ
+  presetBy: { selfie: 'natural', gourmet: 'g_natural' },   // モードごとに最後に選んだプリセット
+  portrait: true,      // グルメのポートレート（周りをぼかす）
+  focus: { x: 0.5, y: 0.5 },  // ピント位置（出力画像の座標。保存しない）
+  running: false,
+  camOk: false,       // 一度でもカメラを開けたか。次回の自動起動の判断に使う
+  timer: 0,           // セルフタイマーの秒数。0 はオフ
+  pausedByHide: false, // バックグラウンドに回ったせいで止めたのか（＝戻ったら再開してよいか）
+  zoom: 1.0,          // デジタルズーム。起動のたびに等倍へ戻す（保存しない）
+  look: 0,            // 色味フィルター。0 はなし
+  lookAmount: 1.0,    // 色味の強さ
+  rafId: null,
+  frames: 0,
+  lastFpsAt: 0,
+  shot: null,          // { blob, url, w, h }
+  params: { ...DEFAULT_PARAMS, ...PRESETS.natural },
+  preset: 'natural',
+  my: null,            // ユーザーが保存した設定
+  comparing: false,    // 長押し中は補正前を表示
+};
+
+// 処理解像度の目安（長辺の画素数）。
+//
+// プレビューは画面に映る以上の細かさで計算しても見えないので、ここまで落とす。
+// 4K を選んでも画面は 1080×2340 しかなく、そのまま処理すると 4 倍の画素を
+// 無駄に計算して frame rate だけが落ちる。
+// 撮影の瞬間だけカメラのフル解像度に切り替えるので、保存される写真は 4K のまま。
+const PREVIEW_MAX_LONG    = 1920;   // プレビューの出力解像度
+const PREVIEW_BLUR_TARGET = 720;    // プレビューのぼかし解像度
+const CAPTURE_BLUR_TARGET = 1440;   // 撮影時のぼかし解像度
+const blurScaleFor = (w, h, target) => Math.min(1, target / Math.max(w, h));
+
+function applyPreviewSize(vw, vh) {
+  const s = Math.min(1, PREVIEW_MAX_LONG / Math.max(vw, vh));
+  const w = Math.round(vw * s), h = Math.round(vh * s);
+  renderer.resize(w, h, blurScaleFor(w, h, PREVIEW_BLUR_TARGET));
+}
+
+const renderer = new Renderer(el.canvas);
+
+// 顔検出。モデルが 3.58MB あるので、チェックが入って初めて読み込む。
+const face = new FaceMask();
+const faceOn = () => el.chkFace.checked && face.ready;
+
+async function enableFace() {
+  if (face.ready || face.loading) return;
+  toast('顔検出を読み込んでいます…');
+  try {
+    await face.init();
+    toast('顔検出を有効にしました');
+  } catch (_) {
+    el.chkFace.checked = false;
+    persist();
+    toast('顔検出の読み込みに失敗しました（通信を確認してください）');
+  }
+}
+
+/* ---------------- カメラ ---------------- */
+
+// auto = true は「ボタンを押さずに試している」状態。
+// 断られてもエラー画面は出さず、起動ボタンに戻すだけにする。
+async function startCamera({ auto = false, note = '' } = {}) {
+  stopCamera();
+  state.pausedByHide = false;
+  setZoom(1.0);            // カメラが変われば画角も変わるので等倍に戻す
+  setState('起動中…');
+
+  // 開くまでの間は「準備中」で覆う。前回の最後の1枚が残っていて、
+  // そのままだと固まったように見えるため。
+  el.startOverlay.classList.add('hidden');
+  el.preparing.classList.remove('hidden');
+
+  const want = RES[el.selRes.value];
+
+  // facingMode は exact で狙い、通らない端末では ideal に落とす
+  const attempts = [
+    { video: { facingMode: { exact: state.facing }, width: { ideal: want.w }, height: { ideal: want.h } }, audio: false },
+    { video: { facingMode: state.facing,            width: { ideal: want.w }, height: { ideal: want.h } }, audio: false },
+    { video: { facingMode: state.facing }, audio: false },
+    { video: true, audio: false },
+  ];
+
+  let stream = null, lastErr = null;
+  for (const c of attempts) {
+    try { stream = await navigator.mediaDevices.getUserMedia(c); break; }
+    catch (e) {
+      lastErr = e;
+      // 権限そのものを断られた場合は解像度を落としても無駄なので即中断
+      if (e.name === 'NotAllowedError' || e.name === 'SecurityError') break;
+    }
+  }
+  if (!stream) { auto ? showStart(`${lastErr?.name || '取得失敗'} ${note}`) : showError(lastErr); return; }
+
+  state.stream = stream;
+  state.track = stream.getVideoTracks()[0];
+  el.video.srcObject = stream;
+
+  try { await el.video.play(); }
+  catch (e) { auto ? showStart(`再生失敗 ${e?.name || ''} ${note}`) : showError(e); return; }
+
+  // 寸法が取れないまま進むと canvas が 0 になり、真っ黒でボタンも出ない
+  // 手詰まりの状態になる。失敗として扱って操作できる画面に戻す。
+  if (!(await waitForVideoSize())) {
+    auto ? showStart('映像が来ない') : showError({ name: 'NotReadableError' });
+    return;
+  }
+
+  const s = state.track.getSettings();
+  const vw = el.video.videoWidth, vh = el.video.videoHeight;
+  applyPreviewSize(vw, vh);
+
+  el.res.textContent = `${vw}×${vh}`;
+  el.cam.textContent = state.facing === 'user' ? '前面' : '背面';
+  hideOverlays();
+  setState('動作中');
+  showHint();
+
+  state.running = true;
+  state.frames = 0;
+  state.lastFpsAt = performance.now();
+  loop();
+
+  // 一度開けたので、次回からはボタンを挟まずに試してよい
+  if (!state.camOk) rememberCamOk();
+}
+
+function showStart(reason) {
+  stopCamera();
+  el.preparing.classList.add('hidden');
+  setState(reason ? `待機中（自動失敗: ${reason}）` : '待機中');
+  el.err.classList.add('hidden');
+  el.startOverlay.classList.remove('hidden');
+}
+
+// 2回目以降はボタンを押さずにカメラを開く。
+//
+// getUserMedia はユーザー操作を要求されることがあり、その場合は失敗する。
+// 失敗したら起動ボタンに戻すだけなので、試すこと自体に副作用はない。
+async function tryAutoStart() {
+  let perm = null;
+  try {
+    const st = await navigator.permissions?.query({ name: 'camera' });
+    if (st) perm = st.state;
+  } catch (_) {
+    // Safari は camera を照会できない。過去に開けた記録の方で判断する。
+  }
+
+  // 起動ボタンが出ている状態からは「見送った」のか「試して断られた」のかが
+  // 区別できないので、理由を診断バーに残す。実機で追えるようにするため。
+  const p = perm ?? '照会不可';
+  const rec = state.camOk ? 'あり' : 'なし';
+
+  if (perm === 'denied') { setState(`待機中（自動: 権限=拒否）`); return; }
+  if (perm !== 'granted' && !state.camOk) {
+    setState(`待機中（自動: 見送り 権限=${p} 実績=${rec}）`);
+    return;
+  }
+  setState(`起動中…（自動 権限=${p} 実績=${rec}）`);
+  await startCamera({ auto: true, note: `権限=${p} 実績=${rec}` });
+}
+
+// videoWidth が 0 のまま描画すると真っ黒になるので、確定するまで待つ。
+// 確定したら true、時間切れなら false を返す。
+//
+// 🔴 rAF で待ってはいけない。ページが隠れている間 rAF は止まるので、
+// 復帰の途中で呼ばれると時間切れの判定すら動かず、そのまま固まる。
+// setTimeout と loadedmetadata で待つ。
+function waitForVideoSize(timeout = 4000) {
+  return new Promise((resolve) => {
+    if (el.video.videoWidth > 0) return resolve(true);
+
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      clearInterval(poll);
+      clearTimeout(limit);
+      el.video.removeEventListener('loadedmetadata', onMeta);
+      resolve(ok);
+    };
+    const onMeta = () => { if (el.video.videoWidth > 0) finish(true); };
+    el.video.addEventListener('loadedmetadata', onMeta);
+    const poll = setInterval(() => { if (el.video.videoWidth > 0) finish(true); }, 100);
+    const limit = setTimeout(() => finish(el.video.videoWidth > 0), timeout);
+  });
+}
+
+function stopCamera() {
+  cancelCountdown();          // 停止・カメラ切替・解像度変更のいずれでも秒読みは無効にする
+  state.running = false;
+  if (state.rafId) { cancelAnimationFrame(state.rafId); state.rafId = null; }
+  if (state.stream) { state.stream.getTracks().forEach((t) => t.stop()); state.stream = null; }
+  state.track = null;
+  el.video.srcObject = null;
+}
+
+function loop() {
+  if (!state.running) return;
+  state.rafId = requestAnimationFrame(loop);
+  const now0 = performance.now();
+
+  if (el.video.readyState >= 2) {
+    // 顔検出は数フレームに1回だけ走る（1回 48ms 前後かかるため）。
+    // 検出しないフレームは前回のマスクをそのまま使う。
+    if (faceOn()) face.update(el.video, now0);
+
+    renderer.draw(el.video, {
+      ...state.params,
+      look: state.look, lookAmount: state.lookAmount,
+      zoom: state.zoom,
+      ...gourmetParams(el.chkMirrorPreview.checked),
+      flipX: el.chkMirrorPreview.checked,
+      maskOnly: el.chkMask.checked,
+      faceOn: faceOn() && face.hasFace,
+      faceSource: face.canvas,
+      // 美顔がオフでも色味だけは効かせたいので、両方オフのときだけ素通しにする
+      bypass: state.comparing || (state.preset === 'off' && state.look === 0),
+    });
+    state.frames++;
+  }
+
+  const now = performance.now();
+  if (now - state.lastFpsAt >= 500) {
+    const fps = (state.frames * 1000) / (now - state.lastFpsAt);
+    el.fps.textContent = fps.toFixed(1);
+    state.frames = 0;
+    state.lastFpsAt = now;
+  }
+}
+
+/* ---------------- 撮影 ---------------- */
+
+async function capture() {
+  if (!state.running) return;
+
+  // 撮影はカメラのフル解像度で行う。プレビューは軽さのために縮小してあるので、
+  // ここで一度だけ本来の解像度に切り替え、ぼかしも高い解像度でかけ直す。
+  const vw = el.video.videoWidth, vh = el.video.videoHeight;
+  const pw = renderer.width, ph = renderer.height, ps = renderer.blurScale;
+
+  renderer.resize(vw, vh, blurScaleFor(vw, vh, CAPTURE_BLUR_TARGET));
+  // 保存は常に実際の向き（鏡像にしない）。純正カメラと同じ挙動で、
+  // 写り込んだ文字も鏡文字にならない。プレビューだけを鏡像で見せている。
+  renderer.draw(el.video, {
+    ...state.params,
+    look: state.look, lookAmount: state.lookAmount,
+    zoom: state.zoom,
+    ...gourmetParams(false),
+    flipX: false,
+    faceOn: faceOn() && face.hasFace,
+    faceSource: face.canvas,
+    bypass: state.preset === 'off' && state.look === 0,
+  });
+
+  let blob;
+  try { blob = await renderer.toBlob('image/jpeg', 0.95); }
+  catch (e) { toast(e.message); return; }
+  finally { renderer.resize(pw, ph, ps); }   // プレビュー用の解像度に戻す
+
+  if (state.shot?.url) URL.revokeObjectURL(state.shot.url);
+  state.shot = { blob, url: URL.createObjectURL(blob), w: vw, h: vh };
+
+  el.pvImg.src = state.shot.url;
+  el.pvInfo.textContent =
+    `${state.shot.w}×${state.shot.h} / ${(blob.size / 1024 / 1024).toFixed(2)} MB / JPEG 95%`;
+  el.pvScroll.classList.remove('actual');
+  el.btnZoom.textContent = '等倍で見る';
+
+  // 直前の一枚を隅に残す。
+  // 「撮ったらすぐ保存」でプレビューを飛ばしたときの、写真への戻り道にもなる。
+  showThumb(state.shot.url);
+
+  // 「撮ったらすぐ保存」がオンなら、プレビューを挟まずに保存へ進む。
+  // 保存しきれなかった場合（iOS で共有シートが弾かれた、ユーザーがやめた）は
+  // 今までどおりプレビューを見せるので、撮った写真を取りこぼすことはない。
+  if (el.chkQuick.checked && (await storeShot()) === 'ok') {
+    toast(IS_IOS ? '保存しました' : 'Download フォルダに保存しました');
+    return;
+  }
+
+  el.preview.classList.remove('hidden');
+}
+
+// 保存方法は OS で分ける。
+//   iOS     : 共有シートの「画像を保存」だけがカメラロールに入れる唯一の手段。
+//   Android : 共有シートに「画像を保存」が無い。ダウンロードが正解で、
+//             保存先の Download フォルダはギャラリーからも見える。
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+// 写真を端末に残す。戻り値は 'ok' | 'cancel' | 'blocked'。
+//
+// iOS の共有シートはタップ直後にしか開けない、という制約がある。
+// ただし 2026-09-07 に iPhone 15 Pro で試したところ、撮影処理を挟んでも開けた。
+// 撮影が長引く（4K など）と間に合わない可能性は残るので、
+// 弾かれた場合は 'blocked' を返して呼び出し側にプレビューを出させる。
+async function storeShot() {
+  const name = `selfie_${timestamp()}.jpg`;
+
+  if (IS_IOS) {
+    const file = new File([state.shot.blob], name, { type: 'image/jpeg' });
+    if (!navigator.canShare?.({ files: [file] })) return 'blocked';
+    try { await navigator.share({ files: [file] }); return 'ok'; }
+    catch (e) { return e.name === 'AbortError' ? 'cancel' : 'blocked'; }
+  }
+
+  // ダウンロード（Android の本命）
+  try {
+    const a = document.createElement('a');
+    a.href = state.shot.url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    maybeShowSavedNote();
+    return 'ok';
+  } catch (_) { return 'blocked'; }
+}
+
+async function save() {
+  if (!state.shot) return;
+  const r = await storeShot();
+  if (r === 'ok' && !IS_IOS) toast('Download フォルダに保存しました');
+  if (r === 'blocked') {
+    // 最後の手段：新しいタブで開いて長押し保存
+    window.open(state.shot.url, '_blank');
+    toast('画像を長押しして「画像を保存」を選んでください');
+  }
+}
+
+// 共有シートを開く（他アプリへ送りたいとき用。保存とは別物）
+async function share() {
+  if (!state.shot) return;
+  const name = `selfie_${timestamp()}.jpg`;
+  const file = new File([state.shot.blob], name, { type: 'image/jpeg' });
+  if (!navigator.canShare?.({ files: [file] })) {
+    toast('この環境では共有できません');
+    return;
+  }
+  try { await navigator.share({ files: [file] }); }
+  catch (e) { if (e.name !== 'AbortError') toast('共有できませんでした'); }
+}
+
+// 保存先の案内。初めてダウンロードで保存できたときだけ出す。
+// iOS は共有シートでカメラロールに入るので出さない。
+function maybeShowSavedNote() {
+  if (IS_IOS) return;
+  try { if (localStorage.getItem(SAVE_NOTE_KEY) === '1') return; } catch (_) { return; }
+  el.savedNote.classList.remove('hidden');
+}
+
+let toastTimer = null;
+function toast(msg) {
+  el.toast.textContent = msg;
+  el.toast.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.toast.classList.add('hidden'), 2600);
+}
+
+function timestamp() {
+  const d = new Date(), p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+}
+
+/* ---------------- 表示まわり ---------------- */
+
+function setState(s) { el.state.textContent = s; }
+
+function hideOverlays() {
+  el.startOverlay.classList.add('hidden');
+  el.err.classList.add('hidden');
+  el.preparing.classList.add('hidden');
+}
+
+function showError(e) {
+  stopCamera();
+  el.preparing.classList.add('hidden');
+  setState('エラー');
+  const map = {
+    NotAllowedError: ['カメラの使用が許可されませんでした',
+      'ブラウザの設定でこのサイトのカメラを「許可」にしてから再試行してください。\n' +
+      'iPhone: 設定 → Safari → カメラ\nAndroid: アドレスバーの鍵アイコン → 権限'],
+    NotFoundError: ['カメラが見つかりません', 'この端末で使えるカメラが検出できませんでした。'],
+    NotReadableError: ['カメラを開けません', '他のアプリがカメラを使用中の可能性があります。閉じてから再試行してください。'],
+    OverconstrainedError: ['この解像度に対応していません', '解像度を下げて再試行してください。'],
+    SecurityError: ['安全な接続ではありません', 'カメラは https:// または localhost でのみ使用できます。'],
+  };
+  const [title, msg] = map[e?.name] || ['カメラを起動できませんでした', String(e?.message || e)];
+  el.errTitle.textContent = title;
+  el.errMsg.textContent = msg;
+  el.startOverlay.classList.add('hidden');
+  el.err.classList.remove('hidden');
+}
+
+/* ---------------- ホーム画面への追加の案内 ---------------- */
+
+// ホーム画面のアイコンから起動しているか。このときは何も出さない。
+const IS_STANDALONE = matchMedia('(display-mode: standalone)').matches
+  || matchMedia('(display-mode: fullscreen)').matches
+  || navigator.standalone === true;                       // iOS Safari
+
+// LINE の内蔵ブラウザ。ここからはホーム画面に追加できない。
+// UA は "... Line/13.x.x" の形。/Line/i のように緩くすると別の語に当たりうるので版番号まで見る。
+const IN_LINE = /\bLine\/\d/.test(navigator.userAgent);
+
+// × で閉じたらこの起動の間は出さない。次に開いたときはまた出る（追加してほしいので）。
+const IB_CLOSED_KEY = 'beautycam-beta.installBarClosed';
+
+const INSTALL_TEXT = {
+  // 🔴 ページ側から外部ブラウザへ切り替える手段は無い（openExternalBrowser=1 は
+  // トークでタップしたリンクにしか効かず、JS で遷移しても外に出ない）。手順を案内するしかない。
+  line:    ['LINEの中で開いています',
+            '右上の「⋮」→「ブラウザで開く」を選ぶと、ホーム画面に追加して全画面で使えます'],
+  android: ['ホーム画面に追加できます',
+            '全画面のアプリとして使えます'],
+  ios:     ['ホーム画面に追加できます',
+            '共有ボタン →「ホーム画面に追加」で全画面になります'],
+};
+
+let installEvt = null;
+
+function installBarClosed() {
+  try { return sessionStorage.getItem(IB_CLOSED_KEY) === '1'; } catch (_) { return false; }
+}
+
+function showInstallBar(kind) {
+  if (IS_STANDALONE || installBarClosed()) return;
+  const [title, body] = INSTALL_TEXT[kind];
+  el.ibTitle.textContent = title;
+  el.ibBody.textContent = body;
+  el.ibAction.hidden = kind !== 'android';               // 追加ダイアログを呼べるのは Android だけ
+  el.installBar.classList.remove('hidden');
+}
+
+function hideInstallBar() { el.installBar.classList.add('hidden'); }
+
+// Android（Chrome 系）: ブラウザが「追加できる」と合図してきたときだけ出す。
+// 既に追加済みならブラウザはこの合図を出さないので、ボタンは自然に出ない。
+function onInstallable(e) {
+  installEvt = e;
+  if (!IN_LINE) showInstallBar('android');
+}
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); onInstallable(e); });
+window.addEventListener('appinstalled', () => { installEvt = null; hideInstallBar(); });
+
+el.ibAction.addEventListener('click', async () => {
+  if (!installEvt) return;
+  installEvt.prompt();
+  try { await installEvt.userChoice; } catch (_) {}
+  installEvt = null;                                      // 合図は一度しか使えない
+  hideInstallBar();
+});
+
+el.ibClose.addEventListener('click', () => {
+  hideInstallBar();
+  try { sessionStorage.setItem(IB_CLOSED_KEY, '1'); } catch (_) {}
+});
+
+function initInstallBar() {
+  if (IS_STANDALONE) return;
+  if (IN_LINE) { showInstallBar('line'); return; }
+  if (IS_IOS)  { showInstallBar('ios'); return; }
+  if (window.__installEvt) onInstallable(window.__installEvt);   // 先に届いていた合図
+}
+
+/* ---------------- 撮影モード（自撮り／グルメ） ---------------- */
+
+// グルメは肌の補正を止め、料理を良く見せる処理に切り替える。
+// 人物の補正をそのまま料理に使うと、焼き色やトーストが肌と判定されてぼかされ、
+// 質感が消えてかえって不味そうに見える（実装前に肌マスクの値で確認済み）。
+const MODE_CAMERA = {
+  selfie:  { facing: 'user',        mirror: true  },
+  gourmet: { facing: 'environment', mirror: false },
+};
+
+function syncMode() {
+  document.querySelectorAll('[data-for]').forEach((n) => {
+    n.classList.toggle('off-mode', n.dataset.for !== state.mode);
+  });
+  el.modeSwitch.querySelectorAll('button[data-mode]').forEach((b) => {
+    b.classList.toggle('on', b.dataset.mode === state.mode);
+  });
+  el.btnPortrait.hidden = state.mode !== 'gourmet';
+  el.btnPortrait.classList.toggle('on', state.portrait);
+}
+
+function setMode(mode) {
+  if (mode === state.mode || !MODE_CAMERA[mode]) return;
+  state.presetBy[state.mode] = state.preset;         // 離れるモードの選択を覚えておく
+  state.mode = mode;
+  applyPreset(state.presetBy[mode] || (mode === 'gourmet' ? 'g_natural' : 'natural'));
+  state.facing = MODE_CAMERA[mode].facing;
+  el.chkMirrorPreview.checked = MODE_CAMERA[mode].mirror;
+  state.focus = { x: 0.5, y: 0.5 };
+  syncMode();
+  persist();
+  if (state.running) startCamera();
+}
+
+el.modeSwitch.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-mode]');
+  if (b) setMode(b.dataset.mode);
+});
+
+el.btnPortrait.addEventListener('click', () => {
+  state.portrait = !state.portrait;
+  syncMode();
+  persist();
+});
+
+// 描画に渡すグルメ用の値。ポートレートを切っているときはぼかしを 0 にする。
+// flipX は「実際に描く向き」。プレビューを鏡像にしていて撮影は正像にするときは、
+// タップした位置（鏡像の画面上の位置）を左右反転して合わせる。
+function gourmetParams(flipX) {
+  const on = state.mode === 'gourmet' && state.portrait;
+  const mirroredTap = el.chkMirrorPreview.checked !== flipX;
+  return {
+    bokeh: on ? state.params.bokeh : 0,
+    focusX: mirroredTap ? 1 - state.focus.x : state.focus.x,
+    focusY: state.focus.y,
+  };
+}
+
+// ---- タップでピントを合わせる ----
+// 短く触って離したときだけ。長押し（補正前との比較）とピンチ（ズーム）とは重ならない。
+let tapStart = null;
+let ringTimer = null;
+
+function showFocusRing(x, y) {
+  clearTimeout(ringTimer);
+  el.focusRing.style.left = x + 'px';
+  el.focusRing.style.top = y + 'px';
+  el.focusRing.classList.remove('hidden', 'fade');
+  void el.focusRing.offsetWidth;                       // 消えかけから出し直すときにアニメを戻す
+  ringTimer = setTimeout(() => {
+    el.focusRing.classList.add('fade');
+    ringTimer = setTimeout(() => el.focusRing.classList.add('hidden'), 500);
+  }, 700);
+}
+
+function setFocusFromTap(cx, cy) {
+  const r = el.canvas.getBoundingClientRect();
+  const cw = el.canvas.width, ch = el.canvas.height;
+  if (!cw || !ch) return;
+  // 映像は object-fit: contain で収めているので、上下か左右に黒帯がある。その分を除く。
+  const k = Math.min(r.width / cw, r.height / ch);
+  const dw = cw * k, dh = ch * k;
+  const ox = r.left + (r.width - dw) / 2, oy = r.top + (r.height - dh) / 2;
+  const nx = (cx - ox) / dw, ny = (cy - oy) / dh;
+  if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;   // 黒帯の上をタップした
+  state.focus = { x: nx, y: 1 - ny };                  // 出力画像の座標は下が 0（シェーダで確認済み）
+  const s = el.canvas.parentElement.getBoundingClientRect();
+  showFocusRing(cx - s.left, cy - s.top);
+}
+
+el.canvas.addEventListener('pointerup', (e) => {
+  const t0 = tapStart;
+  tapStart = null;
+  if (!t0 || t0.id !== e.pointerId) return;
+  if (performance.now() - t0.t > 220) return;          // 長押しだった
+  if (Math.hypot(e.clientX - t0.x, e.clientY - t0.y) > 12) return;
+  if (state.mode !== 'gourmet' || !state.portrait) return;
+  setFocusFromTap(e.clientX, e.clientY);
+});
+
+/* ---------------- 色味フィルター ---------------- */
+
+const LOOK_NAMES = ['色味', 'フィルム', 'クリア', 'やわらか', 'ノスタルジー', 'クール', 'モノクロ'];
+
+function syncLook() {
+  el.btnLook.textContent = LOOK_NAMES[state.look] || '色味';
+  el.btnLook.classList.toggle('on', state.look > 0);
+  el.lookList.querySelectorAll('button[data-look]').forEach((b) => {
+    b.classList.toggle('on', Number(b.dataset.look) === state.look);
+  });
+  el.lookAmount.value = state.lookAmount;
+  el.lookAmount.nextElementSibling.value = fmtVal(state.lookAmount);
+  // 「なし」のときは強さをいじっても意味がないので触れなくする
+  el.lookAmount.disabled = state.look === 0;
+}
+
+el.btnLook.addEventListener('click', () => {
+  el.looks.classList.toggle('hidden');
+  el.thumb.classList.add('hidden');   // 一覧と重なるので引っ込める
+});
+
+el.lookList.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-look]');
+  if (!b) return;
+  state.look = Number(b.dataset.look);
+  syncLook();
+  persist();
+});
+
+el.lookAmount.addEventListener('input', () => {
+  state.lookAmount = parseFloat(el.lookAmount.value);
+  el.lookAmount.nextElementSibling.value = fmtVal(state.lookAmount);
+});
+el.lookAmount.addEventListener('change', persist);
+
+/* ---------------- 直前の一枚 ---------------- */
+
+// 出しっぱなしにせず、しばらくしたら消す。
+// 純正の「カメラ」アプリのサムネイルは消えないが（ギャラリーへの入口を兼ねるため）、
+// このアプリでは画面を広く使いたいので、スクリーンショットのサムネイルに近い挙動にした。
+const THUMB_MS = 5000;
+const THUMB_FADE_MS = 600;
+
+let thumbShow = null, thumbHide = null;
+
+function showThumb(url) {
+  clearTimeout(thumbShow); clearTimeout(thumbHide);
+  el.thumbImg.src = url;
+  el.thumb.classList.remove('hidden', 'fade');
+  thumbShow = setTimeout(() => {
+    el.thumb.classList.add('fade');
+    thumbHide = setTimeout(() => el.thumb.classList.add('hidden'), THUMB_FADE_MS);
+  }, THUMB_MS);
+}
+
+// 消えかけを掴まれたときは、いったん止めて出したままにする
+function holdThumb() {
+  clearTimeout(thumbShow); clearTimeout(thumbHide);
+  el.thumb.classList.remove('fade');
+}
+
+/* ---------------- セルフタイマー ---------------- */
+
+const TIMERS = [0, 3, 5, 10];   // オフ → 3秒 → 5秒 → 10秒 の順に巡回する
+
+let cdId = null;
+
+function syncTimerButton() {
+  el.btnTimer.textContent = state.timer ? `${state.timer}秒` : 'タイマー';
+  el.btnTimer.classList.toggle('on', state.timer > 0);
+}
+
+function cancelCountdown() {
+  if (cdId) { clearInterval(cdId); cdId = null; }
+  el.countdown.classList.add('hidden');
+  el.btnShutter.classList.remove('counting');
+}
+
+function startCountdown() {
+  let left = state.timer;
+  el.cdNum.textContent = left;
+  el.countdown.classList.remove('hidden');
+  el.btnShutter.classList.add('counting');
+  cdId = setInterval(() => {
+    left -= 1;
+    if (left > 0) { el.cdNum.textContent = left; return; }
+    cancelCountdown();
+    capture();
+  }, 1000);
+}
+
+el.btnTimer.addEventListener('click', () => {
+  cancelCountdown();
+  state.timer = TIMERS[(TIMERS.indexOf(state.timer) + 1) % TIMERS.length];
+  syncTimerButton();
+  persist();
+});
+
+/* ---------------- イベント ---------------- */
+
+// ボタンだけでなくオーバーレイ全体で受ける。
+// ボタンへのタップもここへ上がってくるので、待ち受けはこれ一つでよい。
+el.startOverlay.addEventListener('click', () => startCamera());
+el.btnRetry.addEventListener('click', () => startCamera());
+el.btnShutter.addEventListener('click', () => {
+  el.looks.classList.add('hidden');                    // 一覧が出たままだと画が隠れる
+  if (cdId) { cancelCountdown(); return; }              // 秒読み中なら中止
+  if (state.timer > 0 && state.running) { startCountdown(); return; }
+  capture();
+});
+
+el.thumb.addEventListener('click', () => {
+  if (!state.shot) return;
+  holdThumb();                       // 見ている間は消さない
+  el.preview.classList.remove('hidden');
+});
+el.btnStop.addEventListener('click', () => {
+  stopCamera();
+  setState('停止');
+  el.fps.textContent = '—';
+  el.startOverlay.classList.remove('hidden');
+});
+el.btnFlip.addEventListener('click', () => {
+  state.facing = state.facing === 'user' ? 'environment' : 'user';
+  // アウトカメラは鏡像にしないのが自然
+  el.chkMirrorPreview.checked = state.facing === 'user';
+  startCamera();
+});
+el.selRes.addEventListener('change', () => { if (state.running) startCamera(); });
+
+el.btnBack.addEventListener('click', () => {
+  el.preview.classList.add('hidden');
+  if (state.shot) showThumb(state.shot.url);   // 戻ったら数え直す
+});
+el.btnZoom.addEventListener('click', () => {
+  const actual = el.pvScroll.classList.toggle('actual');
+  el.btnZoom.textContent = actual ? '画面に合わせる' : '等倍で見る';
+});
+el.btnSavedNote.addEventListener('click', () => {
+  el.savedNote.classList.add('hidden');
+  try { localStorage.setItem(SAVE_NOTE_KEY, '1'); } catch (_) { /* 保存できなくても支障はない */ }
+});
+el.btnSave.addEventListener('click', save);
+el.btnShare.addEventListener('click', share);
+
+// 隠れている間はカメラを止めて発熱と電池を抑え、戻ってきたら開き直す。
+//
+// 止めるだけで再開しなかったため、ホームに戻して開き直すたびに
+// 起動画面が出てタップが要る状態になっていた（2026-09-10 に実機で判明）。
+// 「自分で止めたときだけ」再開する。利用者が「停止」を押した場合は勝手に開かない。
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (!state.running) return;
+    stopCamera();
+    state.pausedByHide = true;
+    setState('中断（バックグラウンド）');
+    // 起動画面はここでは出さない。戻ったら開き直すので、出すと復帰までの
+    // 1〜2秒だけボタンが見えて「押さないと駄目なのか」と紛らわしい。
+    // 開き直しに失敗したときは showStart() が出す。
+    return;
+  }
+  if (state.pausedByHide) {
+    state.pausedByHide = false;
+    // 断られたら起動画面に戻るだけなので、試すこと自体に副作用はない
+    startCamera({ auto: true, note: '復帰' });
+  }
+});
+
+/* ---------------- 補正パラメータ ---------------- */
+
+const fmtVal = (v) => {
+  const n = parseFloat(v);
+  return Math.abs(n) >= 2 ? n.toFixed(1) : n.toFixed(2);
+};
+
+function applyPreset(name) {
+  const src = name === 'my' ? state.my : PRESETS[name];
+  if (!src) return;
+  state.preset = name;
+  state.presetBy[state.mode] = name;
+  state.params = { ...DEFAULT_PARAMS, ...src };
+  syncPresetButtons();
+  syncSliders();
+  persist();
+}
+
+function syncPresetButtons() {
+  el.presets.querySelectorAll('button[data-preset]').forEach((b) => {
+    b.classList.toggle('on', b.dataset.preset === state.preset);
+  });
+  el.btnPresetMy.hidden = !state.my;
+}
+
+function syncSliders() {
+  el.tune.querySelectorAll('input[data-p]').forEach((inp) => {
+    const v = state.params[inp.dataset.p];
+    if (v === undefined) return;
+    inp.value = v;
+    inp.nextElementSibling.value = fmtVal(v);
+  });
+}
+
+function persist() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      preset: state.preset, params: state.params, my: state.my,
+      mirrorPreview: el.chkMirrorPreview.checked,
+      res: el.selRes.value,
+      diag: el.chkDiag.checked,
+      quick: el.chkQuick.checked,
+      face: el.chkFace.checked,
+      timer: state.timer,
+      look: state.look,
+      mode: state.mode,
+      presetBy: state.presetBy,
+      portrait: state.portrait,
+      lookAmount: state.lookAmount,
+    }));
+  } catch (_) { /* 保存できない環境でも動作には支障がないので無視する */ }
+}
+
+function rememberCamOk() {
+  state.camOk = true;
+  try { localStorage.setItem(CAM_OK_KEY, '1'); } catch (_) { /* 保存できなくても動作には支障がない */ }
+}
+
+function restore() {
+  let d = null;
+  try { state.camOk = localStorage.getItem(CAM_OK_KEY) === '1'; } catch (_) {}
+  try { d = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); } catch (_) {}
+  if (d) {
+    state.my = d.my || null;
+    if (d.params) state.params = { ...DEFAULT_PARAMS, ...d.params };
+    if (d.preset) state.preset = d.preset;
+    if (typeof d.mirrorPreview === 'boolean') el.chkMirrorPreview.checked = d.mirrorPreview;
+    if (d.res && RES[d.res]) el.selRes.value = d.res;
+    if (typeof d.diag === 'boolean') el.chkDiag.checked = d.diag;
+    if (typeof d.quick === 'boolean') el.chkQuick.checked = d.quick;
+    if (typeof d.face === 'boolean') el.chkFace.checked = d.face;
+    if (typeof d.camOk === 'boolean' && d.camOk) rememberCamOk();   // 旧形式からの引き継ぎ
+    if (TIMERS.includes(d.timer)) state.timer = d.timer;
+    if (Number.isInteger(d.look) && d.look >= 0 && d.look < LOOK_NAMES.length) state.look = d.look;
+    if (typeof d.lookAmount === 'number') state.lookAmount = d.lookAmount;
+    if (MODE_CAMERA[d.mode]) {
+      state.mode = d.mode;
+      state.facing = MODE_CAMERA[d.mode].facing;           // 前回のモードに合ったカメラで開く
+    }
+    if (d.presetBy && typeof d.presetBy === 'object') state.presetBy = { ...state.presetBy, ...d.presetBy };
+    if (typeof d.portrait === 'boolean') state.portrait = d.portrait;
+  }
+  syncDiag();
+  syncPresetButtons();
+  syncSliders();
+  syncTimerButton();
+  syncLook();
+  syncMode();
+}
+
+function showHint() {
+  el.hint.classList.add('show');
+  setTimeout(() => el.hint.classList.remove('show'), 3000);
+}
+
+/* ---------------- 補正まわりのイベント ---------------- */
+
+el.presets.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-preset]');
+  if (b) applyPreset(b.dataset.preset);
+});
+
+el.tune.querySelectorAll('input[data-p]').forEach((inp) => {
+  inp.addEventListener('input', () => {
+    state.params[inp.dataset.p] = parseFloat(inp.value);
+    inp.nextElementSibling.value = fmtVal(inp.value);
+    persist();
+  });
+});
+
+el.btnTuneOpen.addEventListener('click', () => el.tune.classList.remove('hidden'));
+el.btnTuneClose.addEventListener('click', () => el.tune.classList.add('hidden'));
+el.btnTuneReset.addEventListener('click', () => applyPreset(state.preset));
+el.btnTuneSave.addEventListener('click', () => {
+  state.my = { ...state.params };
+  state.preset = 'my';
+  syncPresetButtons();
+  persist();
+  toast('マイ設定として保存しました');
+});
+
+el.chkMirrorPreview.addEventListener('change', persist);
+
+// 診断バーは開発用の情報なので既定では出さない。画面を広く使うため。
+function syncDiag() {
+  el.diag.classList.toggle('hidden', !el.chkDiag.checked);
+}
+el.chkDiag.addEventListener('change', () => { syncDiag(); persist(); });
+el.chkFace.addEventListener('change', () => {
+  persist();
+  if (el.chkFace.checked) enableFace();
+});
+el.chkQuick.addEventListener('change', persist);
+
+// iOS では「保存」も共有シートを開くので「共有」と実質同じ動作になる。
+// 同じものが2つ並ぶと分かりにくいので、1つにまとめる。
+if (IS_IOS) {
+  el.btnShare.hidden = true;
+  el.btnSave.textContent = '保存・共有';
+}
+
+/* ---------------- ズーム ---------------- */
+
+// 4K から切り出すので、2倍までは実用的な画質が残る（1080×1632 相当）。
+// 3倍を超えると粗くなるのでここで止める。
+const ZOOM_MIN = 1.0;
+const ZOOM_MAX = 3.0;
+
+function setZoom(z) {
+  state.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+  const on = state.zoom > 1.005;
+  el.zoomBadge.textContent = `${state.zoom.toFixed(1)}x`;
+  el.zoomBadge.classList.toggle('hidden', !on);
+}
+
+el.zoomBadge.addEventListener('click', () => setZoom(1.0));   // 押したら等倍に戻す
+
+// 画面を長押ししている間だけ補正前を表示して見比べられるようにする。
+// 2本指が触れたらピンチとみなし、長押しの比較はやめる（1本指と2本指で棲み分ける）。
+let pressTimer = null;
+const touches = new Map();
+let pinchFrom = 0, zoomFrom = 1;
+
+el.canvas.addEventListener('pointerdown', (e) => {
+  touches.set(e.pointerId, e);
+  tapStart = touches.size === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() } : null;
+  if (touches.size >= 2) {
+    clearTimeout(pressTimer);
+    state.comparing = false;
+    const [a, b] = [...touches.values()];
+    pinchFrom = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+    zoomFrom = state.zoom;
+    return;
+  }
+  clearTimeout(pressTimer);
+  pressTimer = setTimeout(() => { state.comparing = true; }, 220);
+});
+
+el.canvas.addEventListener('pointermove', (e) => {
+  if (!touches.has(e.pointerId)) return;
+  touches.set(e.pointerId, e);
+  if (touches.size < 2 || pinchFrom <= 0) return;
+  const [a, b] = [...touches.values()];
+  const now = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  setZoom(zoomFrom * (now / pinchFrom));
+});
+
+['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) =>
+  el.canvas.addEventListener(ev, (e) => {
+    touches.delete(e.pointerId);
+    if (touches.size < 2) pinchFrom = 0;
+    clearTimeout(pressTimer);
+    state.comparing = false;
+  }));
+el.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+/* ---------------- 起動時チェック ---------------- */
+
+(function boot() {
+  if (!window.isSecureContext) {
+    showError({ name: 'SecurityError' });
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showError({ message: 'このブラウザはカメラに対応していません。' });
+    return;
+  }
+  try {
+    renderer.init();
+  } catch (e) {
+    showError(e.message === 'WEBGL2_UNSUPPORTED'
+      ? { message: 'この端末は WebGL2 に対応していないため、リアルタイム補正は動作しません。' }
+      : e);
+    return;
+  }
+  restore();
+  // 前回オンにしていたなら、起動時に読み込んでおく
+  if (el.chkFace.checked) enableFace();
+  setState('待機中');
+  initInstallBar();
+  tryAutoStart();
+})();

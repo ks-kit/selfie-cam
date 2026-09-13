@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+
+<!-- ホーム画面から起動したときにブラウザのバーを消すための指定。
+     ブラウザのタブとして開いている間はバーは消えない（ブラウザ側の仕様）。 -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="美顔カメラβ">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+
+<title>美顔カメラβ</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <div id="diag" class="hidden">
+    <div><b>状態</b><span id="d-state">未起動</span></div>
+    <div><b>解像度</b><span id="d-res">—</span></div>
+    <div><b>FPS</b><span id="d-fps">—</span></div>
+    <div><b>カメラ</b><span id="d-cam">—</span></div>
+  </div>
+
+  <div id="stage">
+    <canvas id="view"></canvas>
+    <div id="hint">長押しで補正前と見比べ</div>
+
+    <!-- カメラを開いている間の表示。
+         canvas には前回の最後の1枚が残るので（撮影で中身を読むため消せない）、
+         覆っておかないと「固まった」ように見える。 -->
+    <div id="preparing" class="hidden"><span>カメラを準備中…</span></div>
+    <button id="btn-timer">タイマー</button>
+
+    <!-- 撮るものでモードを切り替える。自撮りは肌、グルメは料理を良く見せる -->
+    <div id="mode-switch">
+      <button data-mode="selfie">自撮り</button>
+      <button data-mode="gourmet">グルメ</button>
+    </div>
+    <!-- グルメのときだけ出る。周りをぼかしてピントの合った所を際立たせる -->
+    <button id="btn-portrait" hidden>ポートレート</button>
+    <!-- タップしてピントを合わせた位置 -->
+    <div id="focus-ring" class="hidden"></div>
+    <button id="btn-look">色味</button>
+    <!-- 現在の倍率。等倍のときは出さない。押すと等倍に戻る -->
+    <button id="zoom-badge" class="hidden">1.0x</button>
+
+    <!-- 色味フィルターの一覧。映像の上に出すので、コントロール側の幅を食わない -->
+    <div id="looks" class="hidden">
+      <div id="look-list">
+        <button data-look="0">なし</button>
+        <button data-look="1">フィルム</button>
+        <button data-look="2">クリア</button>
+        <button data-look="3">やわらか</button>
+        <button data-look="4">ノスタルジー</button>
+        <button data-look="5">クール</button>
+        <button data-look="6">モノクロ</button>
+      </div>
+      <label id="look-amt"><span>強さ</span><input type="range" id="look-amount" min="0" max="1" step="0.05"><output></output></label>
+    </div>
+
+    <!-- セルフタイマーの残り秒。撮影の邪魔をしないよう当たり判定は持たせない -->
+    <div id="countdown" class="hidden"><span id="cd-num"></span></div>
+
+    <!-- 直前に撮った一枚。純正カメラと同じで、押すと写真が開く -->
+    <button id="thumb" class="hidden" aria-label="直前に撮った写真を見る"><img id="thumb-img" alt=""></button>
+
+    <!-- iOS はカメラ起動にユーザー操作が必須なので、この一手は省けない。
+         せめて外さないよう、画面のどこをタップしても始まるようにしてある。 -->
+    <div id="start-overlay" class="overlay">
+      <button id="btn-start" class="big">カメラを起動</button>
+      <p class="note">画面のどこをタップしても始まります<br>（初回のみカメラの使用許可を聞かれます）</p>
+    </div>
+
+    <div id="err" class="overlay hidden">
+      <div class="errbox">
+        <h2 id="err-title"></h2>
+        <p id="err-msg"></p>
+        <button id="btn-retry" class="big">再試行</button>
+      </div>
+    </div>
+
+    <!-- 細かい調整 -->
+    <div id="tune" class="hidden">
+      <div class="tune-head">
+        <span>細かい調整</span>
+        <label class="chk"><input type="checkbox" id="chk-mask"><span>肌の判定を見る</span></label>
+        <button id="btn-tune-close">閉じる</button>
+      </div>
+      <div class="tune-opts">
+        <label>解像度
+          <select id="sel-res">
+            <option value="max">最大</option>
+            <option value="fhd" selected>フルHD</option>
+            <option value="hd">HD</option>
+          </select>
+        </label>
+        <label class="chk"><input type="checkbox" id="chk-mirror-preview" checked><span>鏡像で表示</span></label>
+        <label class="chk"><input type="checkbox" id="chk-quick"><span>撮ったらすぐ保存</span></label>
+        <label class="chk"><input type="checkbox" id="chk-diag"><span>診断バー</span></label>
+        <label class="chk"><input type="checkbox" id="chk-face"><span>顔検出を使う</span></label>
+      </div>
+
+      <div class="tune-body">
+        <label data-for="selfie"><span>肌なめらか</span><input type="range" data-p="smooth"     min="0"  max="1"  step="0.01"><output></output></label>
+        <label data-for="selfie"><span>質感を残す</span><input type="range" data-p="detail"     min="0"  max="1"  step="0.01"><output></output></label>
+        <label data-for="selfie"><span>ぼかし範囲</span><input type="range" data-p="radius"     min="2"  max="14" step="0.5"><output></output></label>
+        <label data-for="selfie"><span>髭・くま</span><input type="range" data-p="shadow"       min="0"  max="0.5" step="0.01"><output></output></label>
+        <label data-for="selfie"><span>色ムラ</span><input type="range" data-p="even"           min="0"  max="1"  step="0.01"><output></output></label>
+        <label data-for="selfie"><span>肌の明るさ</span><input type="range" data-p="skinTone"   min="-1" max="1"  step="0.01"><output></output></label>
+        <label data-for="gourmet"><span>質感</span><input type="range" data-p="clarity"         min="0"  max="1"  step="0.01"><output></output></label>
+        <label data-for="gourmet"><span>鮮やかさ</span><input type="range" data-p="vibrance"    min="-1" max="1"  step="0.01"><output></output></label>
+        <label data-for="gourmet"><span>ぼかしの強さ</span><input type="range" data-p="bokeh"    min="0"  max="1"  step="0.01"><output></output></label>
+        <label><span>明るさ</span><input type="range" data-p="brightness"     min="-1" max="1"  step="0.01"><output></output></label>
+        <label><span>コントラスト</span><input type="range" data-p="contrast" min="-1" max="1"  step="0.01"><output></output></label>
+        <label><span>彩度</span><input type="range" data-p="saturation"       min="-1" max="1"  step="0.01"><output></output></label>
+        <label><span>色温度</span><input type="range" data-p="warmth"         min="-1" max="1"  step="0.01"><output></output></label>
+      </div>
+      <div class="tune-foot">
+        <button id="btn-tune-reset">プリセットに戻す</button>
+        <button id="btn-tune-save" class="big">この設定を保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <div class="row presets-row">
+      <div id="presets">
+        <button data-preset="off"     data-for="selfie">オフ</button>
+        <button data-preset="light"   data-for="selfie">ひかえめ</button>
+        <button data-preset="natural" data-for="selfie">ナチュラル</button>
+        <button data-preset="strong"  data-for="selfie">しっかり</button>
+        <button data-preset="fair"    data-for="selfie">色白</button>
+        <button data-preset="warm"    data-for="selfie">血色</button>
+        <button data-preset="my"      data-for="selfie" id="btn-preset-my" hidden>マイ設定</button>
+        <button data-preset="g_off"     data-for="gourmet">オフ</button>
+        <button data-preset="g_natural" data-for="gourmet">ナチュラル</button>
+        <button data-preset="g_rich"    data-for="gourmet">こってり</button>
+        <button data-preset="g_fresh"   data-for="gourmet">さっぱり</button>
+      </div>
+      <button id="btn-tune-open" class="tiny">調整</button>
+    </div>
+
+    <div class="row main">
+      <button id="btn-flip" class="sub">カメラ<br>切替</button>
+      <button id="btn-shutter" class="shutter" aria-label="撮影"></button>
+      <button id="btn-stop" class="sub">停止</button>
+    </div>
+  </div>
+
+  <div id="preview" class="overlay hidden">
+    <div class="pv-head">
+      <button id="btn-back">← 撮り直す</button>
+      <button id="btn-zoom">等倍で見る</button>
+    </div>
+    <div id="pv-scroll"><img id="pv-img" alt="撮影結果"></div>
+    <div class="pv-foot">
+      <span id="pv-info"></span>
+      <button id="btn-share">共有</button>
+      <button id="btn-save" class="big">保存</button>
+    </div>
+  </div>
+
+  <!-- Android で初めて保存したときだけ出る案内。
+       人に配ったとき「写真がどこへ行ったか分からない」となるのを防ぐため。 -->
+  <div id="saved-note" class="hidden">
+    <div class="note-card">
+      <h2>写真を保存しました</h2>
+      <p>ギャラリーの <b>「Download」</b> アルバムに入っています。</p>
+      <p class="sub">カメラで撮った写真と一緒に並べたいときは<br>
+        Google フォト → ライブラリ → デバイス内の写真 →<br>
+        <b>Download</b> → バックアップをオン</p>
+      <button id="btn-saved-note" class="big">わかった</button>
+    </div>
+  </div>
+
+  <!-- ホーム画面への追加の案内。追加済みでアイコンから起動しているときは出ない -->
+  <div id="install-bar" class="hidden" role="status">
+    <div class="ib-text">
+      <b id="ib-title"></b>
+      <span id="ib-body"></span>
+    </div>
+    <button id="ib-action" hidden>追加する</button>
+    <button id="ib-close" aria-label="閉じる">×</button>
+  </div>
+
+  <div id="toast" class="hidden"></div>
+
+</div>
+
+<!-- iOS は video がレンダリングツリーに無いとフレームが更新されないため、隠さず1pxで置く -->
+<video id="src" playsinline autoplay muted></video>
+
+<script type="module" src="js/app.js"></script>
+
+<script>
+  // 「ホーム画面に追加できる」合図は読み込み直後に一度だけ届く。
+  // app.js（module）は後から動くので取りこぼさないよう、ここで先に受けておく。
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    window.__installEvt = e;
+  });
+
+  // Service Worker。インストール可能にするためと、オフライン起動のため。
+  // https / localhost 以外では登録できないので、失敗は黙って無視する。
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>

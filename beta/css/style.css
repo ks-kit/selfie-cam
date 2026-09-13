@@ -1,0 +1,386 @@
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+/* iOS は長押しで「コピー / 画像を保存」のメニュー（callout）を出す。
+   このアプリは画面の長押しを「補正前と見比べる」操作に使っているので、
+   そのままだとメニューが割り込んで比較にならない。
+   contextmenu の抑制だけでは止まらない（iOS のメニューはそのイベントを経由しない）ため、
+   iOS 専用のこのプロパティで切る。撮影結果の画像だけは下で戻している。 */
+html, body, #app, #stage, #view, #controls, #tune, button, label, canvas {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html, body {
+  margin: 0; padding: 0;
+  height: 100%;
+  background: #000;
+  color: #eee;
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+#app {
+  position: fixed; inset: 0;
+  display: flex; flex-direction: column;
+  padding-top: env(safe-area-inset-top);
+  /* 下端のセーフエリアは #controls / .pv-foot の padding で確保する。
+     ここで空けるとコントロールの下に帯ができ、その分だけ映像が縮む。 */
+}
+
+/* ---- 診断バー ---- */
+#diag {
+  flex: 0 0 auto;
+  display: grid; grid-template-columns: 0.85fr 1.4fr 0.75fr 0.8fr;
+  gap: 1px;
+  background: #222;
+  font-size: 13px;
+  line-height: 1.35;
+}
+#diag.hidden { display: none; }
+#diag > div { background: #0d0d0d; padding: 8px 9px; overflow: hidden; }
+#diag b { display: block; color: #7a7a7a; font-weight: 400; font-size: 12px; }
+#diag span { display: block; font-size: 16px; font-weight: 600; color: #4fd1c5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 状態だけは自動起動の理由が入って長くなるので、省略せず折り返す */
+#diag #d-state { white-space: normal; overflow: visible; text-overflow: clip; font-size: 13px; line-height: 1.25; }
+
+/* ---- プレビュー領域 ---- */
+#stage { flex: 1 1 auto; position: relative; min-height: 0; background: #000; }
+#view { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block;
+        touch-action: none; }   /* ピンチをブラウザに取られないようにする */
+
+#start-overlay { cursor: pointer; }
+
+.overlay {
+  position: absolute; inset: 0;
+  z-index: 10;   /* タイマー・サムネイル（6）より前面に */
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 14px;
+  background: rgba(0,0,0,.88);
+  z-index: 10;
+}
+.overlay.hidden { display: none; }
+.note { color: #888; font-size: 12px; margin: 0; }
+
+.errbox { max-width: 88%; text-align: center; }
+.errbox h2 { font-size: 17px; margin: 0 0 10px; color: #ff8080; }
+.errbox p { font-size: 13px; line-height: 1.7; color: #ccc; margin: 0 0 18px; white-space: pre-wrap; }
+
+/* ---- ボタン ---- */
+button {
+  font-family: inherit; color: #eee;
+  background: #2a2a2a; border: 1px solid #3d3d3d; border-radius: 8px;
+  padding: 10px 16px; font-size: 14px; cursor: pointer;
+}
+button:active { background: #3d3d3d; }
+button.big { padding: 14px 30px; font-size: 16px; background: #0a7ea4; border-color: #0a7ea4; }
+button.big:active { background: #086a8a; }
+button.sub { min-width: 62px; font-size: 12px; line-height: 1.3; padding: 9px 6px; }
+
+.shutter {
+  width: 68px; height: 68px; border-radius: 50%;
+  background: #fff; border: 4px solid #888; padding: 0;
+}
+.shutter:active { background: #bbb; }
+
+/* ---- コントロール ---- */
+#controls {
+  flex: 0 0 auto; background: #0d0d0d; border-top: 1px solid #222;
+  padding: 8px 10px calc(env(safe-area-inset-bottom) + 4px);
+}
+.row { display: flex; align-items: center; }
+.chk input { width: 17px; height: 17px; accent-color: #0a7ea4; }
+.row.main { justify-content: space-between; }
+
+/* ---- 撮影結果 ---- */
+#preview { justify-content: stretch; padding: 0; background: #000; }
+.pv-head, .pv-foot {
+  flex: 0 0 auto; width: 100%;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; gap: 10px; background: #0d0d0d;
+}
+.pv-head { padding-top: calc(env(safe-area-inset-top) + 10px); }
+.pv-foot { padding-bottom: calc(env(safe-area-inset-bottom) + 10px); }
+.pv-head button, .pv-foot button:not(.big) { font-size: 13px; padding: 8px 12px; }
+#pv-info { font-size: 11px; color: #888; line-height: 1.4; }
+#pv-scroll { flex: 1 1 auto; width: 100%; min-height: 0; overflow: auto; display: flex; align-items: center; justify-content: center; background: #000; }
+/* 撮影結果だけは長押しを残す。
+   共有シートで保存できなかったときに「長押しして保存」を案内しているため。 */
+#pv-img {
+  -webkit-touch-callout: default;
+  -webkit-user-select: auto;
+  user-select: auto;
+}
+#pv-img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+#pv-scroll.actual { align-items: flex-start; justify-content: flex-start; }
+#pv-scroll.actual #pv-img { max-width: none; max-height: none; }
+
+/* ---- 隠しvideo ---- */
+#src { position: fixed; top: 0; left: 0; width: 1px; height: 1px; opacity: .01; pointer-events: none; z-index: -1; }
+
+/* ---- ホーム画面への追加の案内 ---- */
+#install-bar {
+  position: fixed; left: 0; right: 0;
+  top: env(safe-area-inset-top);
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 10px 11px 14px;
+  background: linear-gradient(120deg, #ff2e93, #6c2bd9);   /* アイコンと同じ配色 */
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0,0,0,.35);
+  z-index: 25;             /* 調整パネル(20)より前、保存の案内(30)より後ろ */
+}
+#install-bar.hidden { display: none; }
+.ib-text { flex: 1 1 auto; min-width: 0; line-height: 1.45; }
+.ib-text b { display: block; font-size: 14px; }
+.ib-text span { display: block; font-size: 12px; opacity: .92; }
+#ib-action {
+  flex: 0 0 auto; padding: 9px 14px; font-size: 13px; font-weight: 700;
+  background: #fff; color: #b0167a; border: none; border-radius: 18px;
+}
+#ib-close {
+  flex: 0 0 auto; width: 32px; height: 32px; padding: 0;
+  background: rgba(255,255,255,.18); border: none; border-radius: 50%;
+  color: #fff; font-size: 17px; line-height: 32px;
+}
+
+/* ---- 初回保存時の案内 ---- */
+#saved-note {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  background: rgba(0,0,0,.72);
+  z-index: 30;                 /* 撮影結果(10)・調整パネル(20)より前面 */
+}
+#saved-note.hidden { display: none; }
+.note-card {
+  width: 100%; max-width: 340px;
+  background: #171717; border: 1px solid #333; border-radius: 14px;
+  padding: 22px 20px 18px; text-align: center;
+}
+.note-card h2 { margin: 0 0 12px; font-size: 17px; color: #fff; }
+.note-card p { margin: 0 0 12px; font-size: 14px; line-height: 1.65; color: #ddd; }
+.note-card p.sub { font-size: 12.5px; line-height: 1.8; color: #9a9a9a; }
+.note-card b { color: #4fd1c5; font-weight: 600; }
+.note-card button { margin-top: 6px; width: 100%; }
+
+/* ---- 画面下部に出る通知 ---- */
+#toast {
+  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 92px);
+  transform: translateX(-50%);
+  max-width: 86%; padding: 12px 20px;
+  background: rgba(18,18,18,.96); border: 1px solid #3d3d3d; border-radius: 24px;
+  font-size: 14px; color: #fff; text-align: center;
+  z-index: 100; pointer-events: none;
+}
+#toast.hidden { display: none; }
+
+/* ---- プリセット ---- */
+.row.presets-row { gap: 8px; margin-bottom: 8px; }
+#presets {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; gap: 6px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+#presets::-webkit-scrollbar { display: none; }
+#presets button {
+  flex: 0 0 auto;
+  padding: 9px 14px; font-size: 13px; border-radius: 18px;
+  background: #1e1e1e; border-color: #333; color: #aaa;
+}
+#presets button.on {
+  background: #0a7ea4; border-color: #0a7ea4; color: #fff; font-weight: 600;
+}
+button.tiny { padding: 6px 12px; font-size: 12px; }
+#btn-tune-open { flex: 0 0 auto; }
+
+/* ---- 調整パネル内の設定行（撮影中は触らないものをここへ集約） ---- */
+.tune-opts {
+  flex: 0 0 auto;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+  padding: 9px 12px; border-bottom: 1px solid #262626;
+  font-size: 12px; color: #bbb;
+}
+.tune-opts label { display: flex; align-items: center; gap: 5px; }
+.tune-opts select {
+  background: #222; color: #eee; border: 1px solid #3d3d3d;
+  border-radius: 6px; padding: 5px 7px; font-size: 12px;
+}
+
+/* ---- 細かい調整パネル ---- */
+#tune {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  max-height: 82%;
+  display: flex; flex-direction: column;
+  background: rgba(12,12,12,.97); border-top: 1px solid #333;
+  z-index: 20;
+}
+#tune.hidden { display: none; }
+.tune-head, .tune-foot {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; border-bottom: 1px solid #262626;
+  font-size: 13px; color: #bbb;
+}
+.tune-foot { border-bottom: none; border-top: 1px solid #262626; }
+.tune-head button, .tune-foot button:not(.big) { padding: 7px 12px; font-size: 12px; }
+.tune-foot button.big { padding: 10px 18px; font-size: 14px; }
+.tune-body { flex: 1 1 auto; overflow-y: auto; padding: 4px 12px 10px; }
+.tune-body label {
+  display: grid; grid-template-columns: 6.4em 1fr 3.1em;
+  align-items: center; gap: 10px;
+  padding: 7px 0; font-size: 13px; color: #ccc;
+}
+.tune-body output { font-size: 12px; color: #4fd1c5; text-align: right; font-variant-numeric: tabular-nums; }
+.tune-body input[type=range] { width: 100%; accent-color: #0a7ea4; height: 26px; }
+
+/* ---- カメラを開いている間 ---- */
+#preparing {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.82);
+  color: #ccc; font-size: 14px;
+  pointer-events: none;      /* 開くまでの間に触っても邪魔しない */
+  z-index: 8;
+}
+#preparing.hidden { display: none; }
+#preparing span { animation: prep-pulse 1.2s ease-in-out infinite; }
+@keyframes prep-pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+
+/* ---- セルフタイマー ---- */
+/* 純正カメラと同じく映像の上に浮かせる。コントロール側の幅を食わないため。 */
+#btn-timer {
+  position: absolute; right: 12px; top: 12px;
+  padding: 7px 13px; font-size: 12px; border-radius: 16px;
+  background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.28); color: #ddd;
+  z-index: 6;
+}
+#btn-timer.on { background: #0a7ea4; border-color: #0a7ea4; color: #fff; font-weight: 600; }
+
+/* ---- セルフタイマーの残り秒 ---- */
+#countdown {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;        /* 構えている間の長押し比較を邪魔しない */
+  z-index: 6;
+}
+#countdown.hidden { display: none; }
+#cd-num {
+  font-size: 108px; font-weight: 300; color: #fff;
+  line-height: 1; font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 24px rgba(0,0,0,.6);
+}
+
+/* ---- モード切替（映像の上部中央） ---- */
+#mode-switch {
+  position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
+  display: flex; padding: 3px; border-radius: 18px;
+  background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.22);
+  z-index: 6;
+}
+#mode-switch button {
+  padding: 6px 13px; font-size: 12px; border: none; border-radius: 15px;
+  background: transparent; color: #ccc;
+}
+#mode-switch button.on {
+  background: linear-gradient(120deg, #ff2e93, #6c2bd9); color: #fff; font-weight: 700;
+}
+
+/* グルメのときだけ出るポートレートのスイッチ（モード切替の下） */
+#btn-portrait {
+  position: absolute; left: 50%; top: 54px; transform: translateX(-50%);
+  padding: 5px 13px; font-size: 12px; border-radius: 15px;
+  background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.28); color: #ddd;
+  z-index: 6;
+}
+#btn-portrait[hidden] { display: none; }
+#btn-portrait.on { background: #fff; border-color: #fff; color: #8a1f9e; font-weight: 700; }
+
+/* タップでピントを合わせた位置。一瞬出てふわっと消える */
+#focus-ring {
+  position: absolute; width: 64px; height: 64px; margin: -32px 0 0 -32px;
+  border: 2px solid #ffd60a; border-radius: 50%;
+  pointer-events: none; z-index: 6;
+  transition: opacity .5s ease, transform .5s ease;
+}
+#focus-ring.hidden { display: none; }
+#focus-ring.fade { opacity: 0; transform: scale(.7); }
+
+/* モードに合わない部品は隠す（data-for="selfie" / "gourmet"） */
+[data-for].off-mode { display: none !important; }
+
+/* ---- ズームの倍率表示 ---- */
+#zoom-badge {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+  padding: 7px 15px; font-size: 13px; font-weight: 600; border-radius: 16px;
+  background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.3); color: #fff;
+  font-variant-numeric: tabular-nums;
+  z-index: 6;              /* 色味の一覧(7)が開いたら隠れる */
+}
+#zoom-badge.hidden { display: none; }
+
+/* ---- 色味フィルター ---- */
+#btn-look {
+  position: absolute; left: 12px; top: 12px;
+  padding: 7px 13px; font-size: 12px; border-radius: 16px;
+  background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.28); color: #ddd;
+  z-index: 6;
+}
+#btn-look.on { background: #0a7ea4; border-color: #0a7ea4; color: #fff; font-weight: 600; }
+
+#looks {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 10px 10px 12px;
+  background: linear-gradient(to top, rgba(0,0,0,.82), rgba(0,0,0,.45));
+  z-index: 7;
+}
+#looks.hidden { display: none; }
+#look-list {
+  display: flex; gap: 6px; overflow-x: auto;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch;
+}
+#look-list::-webkit-scrollbar { display: none; }
+#look-list button {
+  flex: 0 0 auto;
+  padding: 8px 13px; font-size: 12px; border-radius: 16px;
+  background: rgba(40,40,40,.9); border-color: #444; color: #bbb;
+}
+#look-list button.on { background: #0a7ea4; border-color: #0a7ea4; color: #fff; font-weight: 600; }
+#look-amt {
+  display: grid; grid-template-columns: 2.6em 1fr 2.6em;
+  align-items: center; gap: 8px;
+  margin-top: 8px; font-size: 12px; color: #ccc;
+}
+#look-amt input[type=range] { width: 100%; accent-color: #0a7ea4; height: 24px; }
+#look-amt output { font-size: 12px; color: #4fd1c5; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ---- 直前に撮った一枚 ---- */
+#thumb {
+  position: absolute; left: 12px; bottom: 12px;
+  width: 58px; height: 58px; padding: 0;
+  border-radius: 10px; overflow: hidden;
+  border: 2px solid rgba(255,255,255,.85);
+  background: #000; box-shadow: 0 2px 10px rgba(0,0,0,.5);
+  z-index: 6;
+}
+#thumb.hidden { display: none; }
+#thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+/* しばらく置いてから、ふわっと縮みながら消える */
+#thumb { transition: opacity .55s ease, transform .55s ease; }
+#thumb.fade { opacity: 0; transform: scale(.86); }
+
+/* タイマーが入っているときは、シャッターが「中止」も兼ねることを色で示す */
+.shutter.counting { background: #c63737; border-color: #e0a0a0; }
+
+/* ---- 補正前との比較ヒント ---- */
+#hint {
+  position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
+  padding: 6px 14px; border-radius: 14px;
+  background: rgba(0,0,0,.55); color: #ddd; font-size: 12px;
+  pointer-events: none; opacity: 0; transition: opacity .4s;
+  z-index: 5;
+}
+#hint.show { opacity: 1; }
