@@ -5,7 +5,8 @@
 // 古い app.js が residual で残り、実機で「直したのに変わらない」が起きる）。
 // オフラインでも起動できるよう、取得に成功したものは都度キャッシュへ写す。
 
-const CACHE = 'selfie-cam-v25';
+const CACHE_PREFIX = 'selfie-cam-v';
+const CACHE = CACHE_PREFIX + '26';
 
 const PRECACHE = [
   './',
@@ -32,7 +33,11 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      // 🔴 自分の接頭辞のキャッシュだけを消す。β（selfie-cam-beta-*）は同じサイト内にあるので、
+      // 「自分以外を全部消す」にすると、本番を開いただけで β のキャッシュまで消える。
+      .then((keys) => Promise.all(keys
+        .filter((k) => k.startsWith(CACHE_PREFIX) && k !== CACHE)
+        .map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });

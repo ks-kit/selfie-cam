@@ -89,6 +89,7 @@ const state = {
   preset: 'natural',
   my: null,            // ユーザーが保存した設定
   comparing: false,    // 長押し中は補正前を表示
+  srcW: 0, srcH: 0,    // 処理解像度を合わせた時点の映像の寸法（横にしたら入れ替わる）
 };
 
 // 処理解像度の目安（長辺の画素数）。
@@ -178,10 +179,7 @@ async function startCamera({ auto = false, note = '' } = {}) {
   }
 
   const s = state.track.getSettings();
-  const vw = el.video.videoWidth, vh = el.video.videoHeight;
-  applyPreviewSize(vw, vh);
-
-  el.res.textContent = `${vw}×${vh}`;
+  followVideoSize();
   el.cam.textContent = state.facing === 'user' ? '前面' : '背面';
   hideOverlays();
   setState('動作中');
@@ -260,10 +258,23 @@ function waitForVideoSize(timeout = 4000) {
 function stopCamera() {
   cancelCountdown();          // 停止・カメラ切替・解像度変更のいずれでも秒読みは無効にする
   state.running = false;
+  state.srcW = state.srcH = 0; // 開き直したら必ず合わせ直す
   if (state.rafId) { cancelAnimationFrame(state.rafId); state.rafId = null; }
   if (state.stream) { state.stream.getTracks().forEach((t) => t.stop()); state.stream = null; }
   state.track = null;
   el.video.srcObject = null;
+}
+
+// 映像の寸法に処理解像度を合わせる。
+// スマホを横にすると、カメラの映像も縦長 → 横長に入れ替わる（iOS・Android とも）。
+// 起動時に一度合わせるだけだと、横にした瞬間に縦長の枠へ押し込まれて歪む。
+// 毎フレーム寸法を見て、変わったときだけ合わせ直す（比較だけなので負荷はない）。
+function followVideoSize() {
+  const vw = el.video.videoWidth, vh = el.video.videoHeight;
+  if (!vw || !vh || (vw === state.srcW && vh === state.srcH)) return;
+  state.srcW = vw; state.srcH = vh;
+  applyPreviewSize(vw, vh);
+  el.res.textContent = `${vw}×${vh}`;
 }
 
 function loop() {
@@ -272,6 +283,7 @@ function loop() {
   const now0 = performance.now();
 
   if (el.video.readyState >= 2) {
+    followVideoSize();
     // 顔検出は数フレームに1回だけ走る（1回 48ms 前後かかるため）。
     // 検出しないフレームは前回のマスクをそのまま使う。
     if (faceOn()) face.update(el.video, now0);
@@ -357,6 +369,8 @@ async function capture() {
 //             保存先の Download フォルダはギャラリーからも見える。
 const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+// CSS から iPhone だけに出す案内（横画面の保存方法）を切り分けるため
+document.documentElement.classList.toggle('ios', IS_IOS);
 
 // 写真を端末に残す。戻り値は 'ok' | 'cancel' | 'blocked'。
 //
