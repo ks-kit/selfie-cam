@@ -38,16 +38,6 @@
          覆っておかないと「固まった」ように見える。 -->
     <div id="preparing" class="hidden"><span>カメラを準備中…</span></div>
     <button id="btn-timer">タイマー</button>
-
-    <!-- 撮るものでモードを切り替える。自撮りは肌、グルメは料理を良く見せる -->
-    <div id="mode-switch">
-      <button data-mode="selfie">自撮り</button>
-      <button data-mode="gourmet">グルメ</button>
-    </div>
-    <!-- グルメのときだけ出る。周りをぼかしてピントの合った所を際立たせる -->
-    <button id="btn-portrait" hidden>ポートレート</button>
-    <!-- タップしてピントを合わせた位置 -->
-    <div id="focus-ring" class="hidden"></div>
     <button id="btn-look">色味</button>
     <!-- 現在の倍率。等倍のときは出さない。押すと等倍に戻る -->
     <button id="zoom-badge" class="hidden">1.0x</button>
@@ -109,15 +99,12 @@
       </div>
 
       <div class="tune-body">
-        <label data-for="selfie"><span>肌なめらか</span><input type="range" data-p="smooth"     min="0"  max="1"  step="0.01"><output></output></label>
-        <label data-for="selfie"><span>質感を残す</span><input type="range" data-p="detail"     min="0"  max="1"  step="0.01"><output></output></label>
-        <label data-for="selfie"><span>ぼかし範囲</span><input type="range" data-p="radius"     min="2"  max="14" step="0.5"><output></output></label>
-        <label data-for="selfie"><span>髭・くま</span><input type="range" data-p="shadow"       min="0"  max="0.5" step="0.01"><output></output></label>
-        <label data-for="selfie"><span>色ムラ</span><input type="range" data-p="even"           min="0"  max="1"  step="0.01"><output></output></label>
-        <label data-for="selfie"><span>肌の明るさ</span><input type="range" data-p="skinTone"   min="-1" max="1"  step="0.01"><output></output></label>
-        <label data-for="gourmet"><span>質感</span><input type="range" data-p="clarity"         min="0"  max="1"  step="0.01"><output></output></label>
-        <label data-for="gourmet"><span>鮮やかさ</span><input type="range" data-p="vibrance"    min="-1" max="1"  step="0.01"><output></output></label>
-        <label data-for="gourmet"><span>ぼかしの強さ</span><input type="range" data-p="bokeh"    min="0"  max="1"  step="0.01"><output></output></label>
+        <label><span>肌なめらか</span><input type="range" data-p="smooth"     min="0"  max="1"  step="0.01"><output></output></label>
+        <label><span>質感を残す</span><input type="range" data-p="detail"     min="0"  max="1"  step="0.01"><output></output></label>
+        <label><span>ぼかし範囲</span><input type="range" data-p="radius"     min="2"  max="14" step="0.5"><output></output></label>
+        <label><span>髭・くま</span><input type="range" data-p="shadow"       min="0"  max="0.5" step="0.01"><output></output></label>
+        <label><span>色ムラ</span><input type="range" data-p="even"           min="0"  max="1"  step="0.01"><output></output></label>
+        <label><span>肌の明るさ</span><input type="range" data-p="skinTone"   min="-1" max="1"  step="0.01"><output></output></label>
         <label><span>明るさ</span><input type="range" data-p="brightness"     min="-1" max="1"  step="0.01"><output></output></label>
         <label><span>コントラスト</span><input type="range" data-p="contrast" min="-1" max="1"  step="0.01"><output></output></label>
         <label><span>彩度</span><input type="range" data-p="saturation"       min="-1" max="1"  step="0.01"><output></output></label>
@@ -133,17 +120,13 @@
   <div id="controls">
     <div class="row presets-row">
       <div id="presets">
-        <button data-preset="off"     data-for="selfie">オフ</button>
-        <button data-preset="light"   data-for="selfie">ひかえめ</button>
-        <button data-preset="natural" data-for="selfie">ナチュラル</button>
-        <button data-preset="strong"  data-for="selfie">しっかり</button>
-        <button data-preset="fair"    data-for="selfie">色白</button>
-        <button data-preset="warm"    data-for="selfie">血色</button>
-        <button data-preset="my"      data-for="selfie" id="btn-preset-my" hidden>マイ設定</button>
-        <button data-preset="g_off"     data-for="gourmet">オフ</button>
-        <button data-preset="g_natural" data-for="gourmet">ナチュラル</button>
-        <button data-preset="g_rich"    data-for="gourmet">こってり</button>
-        <button data-preset="g_fresh"   data-for="gourmet">さっぱり</button>
+        <button data-preset="off">オフ</button>
+        <button data-preset="light">ひかえめ</button>
+        <button data-preset="natural">ナチュラル</button>
+        <button data-preset="strong">しっかり</button>
+        <button data-preset="fair">色白</button>
+        <button data-preset="warm">血色</button>
+        <button data-preset="my" id="btn-preset-my" hidden>マイ設定</button>
       </div>
       <button id="btn-tune-open" class="tiny">調整</button>
     </div>

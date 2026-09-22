@@ -28,7 +28,6 @@ const el = {
   preparing: $('preparing'),
   savedNote: $('saved-note'), btnSavedNote: $('btn-saved-note'),
   zoomBadge: $('zoom-badge'),
-  modeSwitch: $('mode-switch'), btnPortrait: $('btn-portrait'), focusRing: $('focus-ring'),
   installBar: $('install-bar'), ibTitle: $('ib-title'), ibBody: $('ib-body'),
   ibAction: $('ib-action'), ibClose: $('ib-close'),
 };
@@ -56,14 +55,6 @@ const PRESETS = {
   strong:  { smooth: 1.00, detail: 0.34, brightness: 0.15, contrast: 0.04, saturation:  0.05, warmth:  0.04, skinTone: 0.28, shadow: 0.18, even: 0.32, radius: 11 },
   fair:    { smooth: 0.88, detail: 0.48, brightness: 0.20, contrast: 0.02, saturation: -0.04, warmth: -0.08, skinTone: 0.38, shadow: 0.12, even: 0.20, radius:  8 },
   warm:    { smooth: 0.88, detail: 0.48, brightness: 0.12, contrast: 0.03, saturation:  0.14, warmth:  0.20, skinTone: 0.22, shadow: 0.10, even: 0.20, radius:  8 },
-
-  // ---- グルメ ----
-  // 肌の補正（smooth / shadow / even / skinTone）は必ず 0。料理の質感を消してしまうため。
-  // 値は合成画像で効き方を確かめただけで、実機の料理ではまだ詰めていない（要調整）。
-  g_off:     { smooth: 0, shadow: 0, even: 0, skinTone: 0, detail: 0.45, radius: 5, clarity: 0.00, vibrance:  0.00, brightness: 0.00, contrast: 0.00, saturation:  0.00, warmth:  0.00, bokeh: 0.85 },
-  g_natural: { smooth: 0, shadow: 0, even: 0, skinTone: 0, detail: 0.45, radius: 5, clarity: 0.35, vibrance:  0.30, brightness: 0.05, contrast: 0.06, saturation:  0.00, warmth:  0.06, bokeh: 0.85 },
-  g_rich:    { smooth: 0, shadow: 0, even: 0, skinTone: 0, detail: 0.45, radius: 5, clarity: 0.55, vibrance:  0.55, brightness: 0.03, contrast: 0.12, saturation:  0.06, warmth:  0.14, bokeh: 0.90 },
-  g_fresh:   { smooth: 0, shadow: 0, even: 0, skinTone: 0, detail: 0.45, radius: 5, clarity: 0.30, vibrance:  0.22, brightness: 0.12, contrast: 0.03, saturation: -0.02, warmth: -0.07, bokeh: 0.80 },
 };
 
 // プリセットの数値を変えたので、保存済みの旧設定は読み込まないようキーを上げる
@@ -83,10 +74,6 @@ const state = {
   stream: null,
   track: null,
   facing: 'user',      // 'user' = インカメラ / 'environment' = アウトカメラ
-  mode: 'selfie',      // 'selfie' = 自撮り / 'gourmet' = グルメ
-  presetBy: { selfie: 'natural', gourmet: 'g_natural' },   // モードごとに最後に選んだプリセット
-  portrait: true,      // グルメのポートレート（周りをぼかす）
-  focus: { x: 0.5, y: 0.5 },  // ピント位置（出力画像の座標。保存しない）
   running: false,
   camOk: false,       // 一度でもカメラを開けたか。次回の自動起動の判断に使う
   timer: 0,           // セルフタイマーの秒数。0 はオフ
@@ -102,6 +89,7 @@ const state = {
   preset: 'natural',
   my: null,            // ユーザーが保存した設定
   comparing: false,    // 長押し中は補正前を表示
+  srcW: 0, srcH: 0,    // 処理解像度を合わせた時点の映像の寸法（横にしたら入れ替わる）
 };
 
 // 処理解像度の目安（長辺の画素数）。
@@ -191,10 +179,7 @@ async function startCamera({ auto = false, note = '' } = {}) {
   }
 
   const s = state.track.getSettings();
-  const vw = el.video.videoWidth, vh = el.video.videoHeight;
-  applyPreviewSize(vw, vh);
-
-  el.res.textContent = `${vw}×${vh}`;
+  followVideoSize();
   el.cam.textContent = state.facing === 'user' ? '前面' : '背面';
   hideOverlays();
   setState('動作中');
@@ -273,10 +258,23 @@ function waitForVideoSize(timeout = 4000) {
 function stopCamera() {
   cancelCountdown();          // 停止・カメラ切替・解像度変更のいずれでも秒読みは無効にする
   state.running = false;
+  state.srcW = state.srcH = 0; // 開き直したら必ず合わせ直す
   if (state.rafId) { cancelAnimationFrame(state.rafId); state.rafId = null; }
   if (state.stream) { state.stream.getTracks().forEach((t) => t.stop()); state.stream = null; }
   state.track = null;
   el.video.srcObject = null;
+}
+
+// 映像の寸法に処理解像度を合わせる。
+// スマホを横にすると、カメラの映像も縦長 → 横長に入れ替わる（iOS・Android とも）。
+// 起動時に一度合わせるだけだと、横にした瞬間に縦長の枠へ押し込まれて歪む。
+// 毎フレーム寸法を見て、変わったときだけ合わせ直す（比較だけなので負荷はない）。
+function followVideoSize() {
+  const vw = el.video.videoWidth, vh = el.video.videoHeight;
+  if (!vw || !vh || (vw === state.srcW && vh === state.srcH)) return;
+  state.srcW = vw; state.srcH = vh;
+  applyPreviewSize(vw, vh);
+  el.res.textContent = `${vw}×${vh}`;
 }
 
 function loop() {
@@ -285,6 +283,7 @@ function loop() {
   const now0 = performance.now();
 
   if (el.video.readyState >= 2) {
+    followVideoSize();
     // 顔検出は数フレームに1回だけ走る（1回 48ms 前後かかるため）。
     // 検出しないフレームは前回のマスクをそのまま使う。
     if (faceOn()) face.update(el.video, now0);
@@ -293,7 +292,6 @@ function loop() {
       ...state.params,
       look: state.look, lookAmount: state.lookAmount,
       zoom: state.zoom,
-      ...gourmetParams(el.chkMirrorPreview.checked),
       flipX: el.chkMirrorPreview.checked,
       maskOnly: el.chkMask.checked,
       faceOn: faceOn() && face.hasFace,
@@ -330,7 +328,6 @@ async function capture() {
     ...state.params,
     look: state.look, lookAmount: state.lookAmount,
     zoom: state.zoom,
-    ...gourmetParams(false),
     flipX: false,
     faceOn: faceOn() && face.hasFace,
     faceSource: face.canvas,
@@ -548,106 +545,6 @@ function initInstallBar() {
   if (window.__installEvt) onInstallable(window.__installEvt);   // 先に届いていた合図
 }
 
-/* ---------------- 撮影モード（自撮り／グルメ） ---------------- */
-
-// グルメは肌の補正を止め、料理を良く見せる処理に切り替える。
-// 人物の補正をそのまま料理に使うと、焼き色やトーストが肌と判定されてぼかされ、
-// 質感が消えてかえって不味そうに見える（実装前に肌マスクの値で確認済み）。
-const MODE_CAMERA = {
-  selfie:  { facing: 'user',        mirror: true  },
-  gourmet: { facing: 'environment', mirror: false },
-};
-
-function syncMode() {
-  document.querySelectorAll('[data-for]').forEach((n) => {
-    n.classList.toggle('off-mode', n.dataset.for !== state.mode);
-  });
-  el.modeSwitch.querySelectorAll('button[data-mode]').forEach((b) => {
-    b.classList.toggle('on', b.dataset.mode === state.mode);
-  });
-  el.btnPortrait.hidden = state.mode !== 'gourmet';
-  el.btnPortrait.classList.toggle('on', state.portrait);
-}
-
-function setMode(mode) {
-  if (mode === state.mode || !MODE_CAMERA[mode]) return;
-  state.presetBy[state.mode] = state.preset;         // 離れるモードの選択を覚えておく
-  state.mode = mode;
-  applyPreset(state.presetBy[mode] || (mode === 'gourmet' ? 'g_natural' : 'natural'));
-  state.facing = MODE_CAMERA[mode].facing;
-  el.chkMirrorPreview.checked = MODE_CAMERA[mode].mirror;
-  state.focus = { x: 0.5, y: 0.5 };
-  syncMode();
-  persist();
-  if (state.running) startCamera();
-}
-
-el.modeSwitch.addEventListener('click', (e) => {
-  const b = e.target.closest('button[data-mode]');
-  if (b) setMode(b.dataset.mode);
-});
-
-el.btnPortrait.addEventListener('click', () => {
-  state.portrait = !state.portrait;
-  syncMode();
-  persist();
-});
-
-// 描画に渡すグルメ用の値。ポートレートを切っているときはぼかしを 0 にする。
-// flipX は「実際に描く向き」。プレビューを鏡像にしていて撮影は正像にするときは、
-// タップした位置（鏡像の画面上の位置）を左右反転して合わせる。
-function gourmetParams(flipX) {
-  const on = state.mode === 'gourmet' && state.portrait;
-  const mirroredTap = el.chkMirrorPreview.checked !== flipX;
-  return {
-    bokeh: on ? state.params.bokeh : 0,
-    focusX: mirroredTap ? 1 - state.focus.x : state.focus.x,
-    focusY: state.focus.y,
-  };
-}
-
-// ---- タップでピントを合わせる ----
-// 短く触って離したときだけ。長押し（補正前との比較）とピンチ（ズーム）とは重ならない。
-let tapStart = null;
-let ringTimer = null;
-
-function showFocusRing(x, y) {
-  clearTimeout(ringTimer);
-  el.focusRing.style.left = x + 'px';
-  el.focusRing.style.top = y + 'px';
-  el.focusRing.classList.remove('hidden', 'fade');
-  void el.focusRing.offsetWidth;                       // 消えかけから出し直すときにアニメを戻す
-  ringTimer = setTimeout(() => {
-    el.focusRing.classList.add('fade');
-    ringTimer = setTimeout(() => el.focusRing.classList.add('hidden'), 500);
-  }, 700);
-}
-
-function setFocusFromTap(cx, cy) {
-  const r = el.canvas.getBoundingClientRect();
-  const cw = el.canvas.width, ch = el.canvas.height;
-  if (!cw || !ch) return;
-  // 映像は object-fit: contain で収めているので、上下か左右に黒帯がある。その分を除く。
-  const k = Math.min(r.width / cw, r.height / ch);
-  const dw = cw * k, dh = ch * k;
-  const ox = r.left + (r.width - dw) / 2, oy = r.top + (r.height - dh) / 2;
-  const nx = (cx - ox) / dw, ny = (cy - oy) / dh;
-  if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return;   // 黒帯の上をタップした
-  state.focus = { x: nx, y: 1 - ny };                  // 出力画像の座標は下が 0（シェーダで確認済み）
-  const s = el.canvas.parentElement.getBoundingClientRect();
-  showFocusRing(cx - s.left, cy - s.top);
-}
-
-el.canvas.addEventListener('pointerup', (e) => {
-  const t0 = tapStart;
-  tapStart = null;
-  if (!t0 || t0.id !== e.pointerId) return;
-  if (performance.now() - t0.t > 220) return;          // 長押しだった
-  if (Math.hypot(e.clientX - t0.x, e.clientY - t0.y) > 12) return;
-  if (state.mode !== 'gourmet' || !state.portrait) return;
-  setFocusFromTap(e.clientX, e.clientY);
-});
-
 /* ---------------- 色味フィルター ---------------- */
 
 const LOOK_NAMES = ['色味', 'フィルム', 'クリア', 'やわらか', 'ノスタルジー', 'クール', 'モノクロ'];
@@ -827,7 +724,6 @@ function applyPreset(name) {
   const src = name === 'my' ? state.my : PRESETS[name];
   if (!src) return;
   state.preset = name;
-  state.presetBy[state.mode] = name;
   state.params = { ...DEFAULT_PARAMS, ...src };
   syncPresetButtons();
   syncSliders();
@@ -861,9 +757,6 @@ function persist() {
       face: el.chkFace.checked,
       timer: state.timer,
       look: state.look,
-      mode: state.mode,
-      presetBy: state.presetBy,
-      portrait: state.portrait,
       lookAmount: state.lookAmount,
     }));
   } catch (_) { /* 保存できない環境でも動作には支障がないので無視する */ }
@@ -891,19 +784,12 @@ function restore() {
     if (TIMERS.includes(d.timer)) state.timer = d.timer;
     if (Number.isInteger(d.look) && d.look >= 0 && d.look < LOOK_NAMES.length) state.look = d.look;
     if (typeof d.lookAmount === 'number') state.lookAmount = d.lookAmount;
-    if (MODE_CAMERA[d.mode]) {
-      state.mode = d.mode;
-      state.facing = MODE_CAMERA[d.mode].facing;           // 前回のモードに合ったカメラで開く
-    }
-    if (d.presetBy && typeof d.presetBy === 'object') state.presetBy = { ...state.presetBy, ...d.presetBy };
-    if (typeof d.portrait === 'boolean') state.portrait = d.portrait;
   }
   syncDiag();
   syncPresetButtons();
   syncSliders();
   syncTimerButton();
   syncLook();
-  syncMode();
 }
 
 function showHint() {
@@ -981,7 +867,6 @@ let pinchFrom = 0, zoomFrom = 1;
 
 el.canvas.addEventListener('pointerdown', (e) => {
   touches.set(e.pointerId, e);
-  tapStart = touches.size === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() } : null;
   if (touches.size >= 2) {
     clearTimeout(pressTimer);
     state.comparing = false;

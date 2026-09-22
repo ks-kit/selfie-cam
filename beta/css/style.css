@@ -273,44 +273,6 @@ button.tiny { padding: 6px 12px; font-size: 12px; }
   text-shadow: 0 2px 24px rgba(0,0,0,.6);
 }
 
-/* ---- モード切替（映像の上部中央） ---- */
-#mode-switch {
-  position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
-  display: flex; padding: 3px; border-radius: 18px;
-  background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.22);
-  z-index: 6;
-}
-#mode-switch button {
-  padding: 6px 13px; font-size: 12px; border: none; border-radius: 15px;
-  background: transparent; color: #ccc;
-}
-#mode-switch button.on {
-  background: linear-gradient(120deg, #ff2e93, #6c2bd9); color: #fff; font-weight: 700;
-}
-
-/* グルメのときだけ出るポートレートのスイッチ（モード切替の下） */
-#btn-portrait {
-  position: absolute; left: 50%; top: 54px; transform: translateX(-50%);
-  padding: 5px 13px; font-size: 12px; border-radius: 15px;
-  background: rgba(0,0,0,.5); border: 1px solid rgba(255,255,255,.28); color: #ddd;
-  z-index: 6;
-}
-#btn-portrait[hidden] { display: none; }
-#btn-portrait.on { background: #fff; border-color: #fff; color: #8a1f9e; font-weight: 700; }
-
-/* タップでピントを合わせた位置。一瞬出てふわっと消える */
-#focus-ring {
-  position: absolute; width: 64px; height: 64px; margin: -32px 0 0 -32px;
-  border: 2px solid #ffd60a; border-radius: 50%;
-  pointer-events: none; z-index: 6;
-  transition: opacity .5s ease, transform .5s ease;
-}
-#focus-ring.hidden { display: none; }
-#focus-ring.fade { opacity: 0; transform: scale(.7); }
-
-/* モードに合わない部品は隠す（data-for="selfie" / "gourmet"） */
-[data-for].off-mode { display: none !important; }
-
 /* ---- ズームの倍率表示 ---- */
 #zoom-badge {
   position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
@@ -384,3 +346,56 @@ button.tiny { padding: 6px 12px; font-size: 12px; }
   z-index: 5;
 }
 #hint.show { opacity: 1; }
+
+/* ---- 横画面 ----
+   スマホを横にしたときは、コントロールを下から右へ移す。
+   下に置いたままだと、ただでさえ低い画面の高さをコントロールが奪い、映像が小さくなる。
+   右端に「プリセットの列」と「シャッターの列」を並べ、シャッターは親指の届く一番外側に置く。
+   タブレットの横画面は高さに余裕があるので、縦画面と同じ配置のままにする（max-height で除外）。 */
+@media (orientation: landscape) and (max-height: 600px) {
+  #app {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr);
+    padding-left: env(safe-area-inset-left);
+  }
+  #diag  { grid-column: 1; grid-row: 1; }
+  #stage { grid-column: 1; grid-row: 2; }
+
+  #controls {
+    grid-column: 2; grid-row: 1 / 3;
+    display: flex; gap: 8px;
+    border-top: none; border-left: 1px solid #222;
+    padding: 8px calc(env(safe-area-inset-right) + 8px) calc(env(safe-area-inset-bottom) + 8px) 8px;
+  }
+
+  /* プリセットは縦に並べて縦にスクロール */
+  .row.presets-row {
+    flex-direction: column; align-items: stretch;
+    width: 88px; margin-bottom: 0; gap: 8px; min-height: 0;
+  }
+  #presets {
+    flex-direction: column; align-items: stretch;
+    overflow-x: hidden; overflow-y: auto;
+  }
+  #presets button { padding: 8px 6px; font-size: 12px; }
+
+  /* 上からカメラ切替・シャッター・停止 */
+  .row.main { flex-direction: column; justify-content: space-between; }
+
+  /* 調整パネルは映像の右半分に出す。左側で映像を見ながら動かせるように */
+  #tune {
+    left: auto; top: 0; right: 0; bottom: 0;
+    width: min(440px, 100%); max-height: none;
+    border-top: none; border-left: 1px solid #333;
+  }
+
+  /* 横にすると切り欠きが左右に来るので、端のボタンを内側へ逃がす */
+  .pv-head, .pv-foot {
+    padding-left: calc(env(safe-area-inset-left) + 12px);
+    padding-right: calc(env(safe-area-inset-right) + 12px);
+  }
+  .pv-head { padding-top: 10px; }
+  .pv-foot { padding-bottom: calc(env(safe-area-inset-bottom) + 6px); }
+  #install-bar { padding-left: calc(env(safe-area-inset-left) + 14px); padding-right: calc(env(safe-area-inset-right) + 10px); }
+}

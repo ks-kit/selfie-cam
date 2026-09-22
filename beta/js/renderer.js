@@ -30,13 +30,6 @@ export const DEFAULT_PARAMS = {
   zoom: 1.0,        // デジタルズーム（1.0 で等倍）
   look: 0,          // 色味フィルターの種類（0 = なし）
   lookAmount: 1.0,  // その強さ
-  // ---- グルメ用 ----
-  clarity: 0.0,     // 質感の強調
-  vibrance: 0.0,    // 鮮やかさ（くすんだ色ほど強く）
-  bokeh: 0.0,       // ポートレートのぼかしの強さ（0 で無効）
-  focusX: 0.5,      // ピント位置（出力画像の座標）
-  focusY: 0.5,
-  focusR: 0.20,     // くっきり残す範囲
   radius: 6.0,      // ぼかし半径（低解像度側の画素数）
   // 同じ肌とみなす色の差。0.16 では色差 0.16 の画素にもまだ 0.61 の重みが残り、
   // 眉毛と肌の境目のような中くらいの輪郭を越えて混ざっていた。
@@ -52,11 +45,6 @@ const BASE_RADIUS = 24;
 // u_radius は「ぼかしバッファ上の画素数」なので、バッファの大きさが変わると
 // 画に対する効き幅も変わってしまう。ここを基準に正規化して揃える。
 const RADIUS_REF = 720;
-
-// ポートレート用の強いぼかし。これも出力解像度に依存しない固定の大きさにして、
-// プレビューと撮影で同じボケ方になるようにする。
-const BOKEH_LONG   = 360;
-const BOKEH_RADIUS = 12;
 
 export class Renderer {
   constructor(canvas) {
@@ -90,8 +78,7 @@ export class Renderer {
       ['u_orig', 'u_blur', 'u_base', 'u_smooth', 'u_detail', 'u_brightness', 'u_contrast',
        'u_saturation', 'u_warmth', 'u_skinTone', 'u_shadow', 'u_even',
        'u_look', 'u_lookAmount', 'u_maskOnly',
-       'u_faceMask', 'u_faceOn', 'u_faceFlip', 'u_zoom',
-       'u_clarity', 'u_vibrance', 'u_bokehTex', 'u_bokeh', 'u_focus', 'u_focusR', 'u_aspect']);
+       'u_faceMask', 'u_faceOn', 'u_faceFlip', 'u_zoom']);
 
     // 画面全体を覆う三角形2枚。全パスで使い回す。
     this.vao = gl.createVertexArray();
@@ -183,8 +170,6 @@ export class Renderer {
     this._disposeFBO(this.fbo.b);
     this._disposeFBO(this.fbo.baseA);
     this._disposeFBO(this.fbo.baseB);
-    this._disposeFBO(this.fbo.bokehA);
-    this._disposeFBO(this.fbo.bokehB);
 
     const bw = Math.max(2, Math.round(w * blurScale));
     const bh = Math.max(2, Math.round(h * blurScale));
@@ -198,12 +183,6 @@ export class Renderer {
     const sh = Math.max(2, Math.round(h * bs));
     this.fbo.baseA = this._makeFBO(sw, sh);
     this.fbo.baseB = this._makeFBO(sw, sh);
-
-    const ks = BOKEH_LONG / Math.max(w, h);
-    const kw = Math.max(2, Math.round(w * ks));
-    const kh = Math.max(2, Math.round(h * ks));
-    this.fbo.bokehA = this._makeFBO(kw, kh);
-    this.fbo.bokehB = this._makeFBO(kw, kh);
   }
 
   _bindTarget(target) {
@@ -300,30 +279,6 @@ export class Renderer {
     this._useTexture(this.fbo.baseB.tex, 0, gp.u.u_tex);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-    // --- ポートレート用のぼかし（使うときだけ） ---
-    // バイラテラルの結果を元にして、横→縦のガウスを2往復かける。
-    // バイラテラルは輪郭を残すが、ここで重ねるガウスが輪郭ごとぼかすので問題ない。
-    // 元が既になめらかなので、低い解像度に落としてもちらつきにくい。
-    if (p.bokeh > 0.001) {
-      const gp2 = this.prog.gauss;
-      gl.useProgram(gp2.id);
-      gl.uniform1f(gp2.u.u_radius, BOKEH_RADIUS);
-      gl.uniform2f(gp2.u.u_texel, 1 / this.fbo.bokehA.w, 1 / this.fbo.bokehA.h);
-      let src = this.fbo.b.tex;
-      for (let i = 0; i < 2; i++) {
-        this._bindTarget(this.fbo.bokehA);
-        gl.uniform2f(gp2.u.u_dir, 1, 0);
-        this._useTexture(src, 0, gp2.u.u_tex);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-        this._bindTarget(this.fbo.bokehB);
-        gl.uniform2f(gp2.u.u_dir, 0, 1);
-        this._useTexture(this.fbo.bokehA.tex, 0, gp2.u.u_tex);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-        src = this.fbo.bokehB.tex;
-      }
-    }
-
     // --- Pass 6: 合成して画面へ ---
     const cp = this.prog.composite;
     gl.useProgram(cp.id);
@@ -345,14 +300,6 @@ export class Renderer {
     gl.uniform1f(cp.u.u_faceOn,   faceOn ? 1.0 : 0.0);
     gl.uniform1f(cp.u.u_faceFlip, params.flipX ? 1.0 : 0.0);
     gl.uniform1f(cp.u.u_zoom,     p.zoom);
-    gl.uniform1f(cp.u.u_clarity,  p.clarity);
-    gl.uniform1f(cp.u.u_vibrance, p.vibrance);
-    gl.uniform1f(cp.u.u_bokeh,    p.bokeh);
-    gl.uniform2f(cp.u.u_focus,    p.focusX, p.focusY);
-    gl.uniform1f(cp.u.u_focusR,   p.focusR);
-    gl.uniform1f(cp.u.u_aspect,   this.width / Math.max(1, this.height));
-    // ぼかしを使わないときもサンプラーには何か繋いでおく（未接続の警告を避ける）
-    this._useTexture(this.fbo.bokehB.tex, 4, cp.u.u_bokehTex);
 
     gl.uniform1f(cp.u.u_smooth,     p.smooth);
     gl.uniform1f(cp.u.u_detail,     p.detail);

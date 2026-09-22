@@ -183,15 +183,6 @@ uniform sampler2D u_faceMask;
 uniform float u_faceOn;      // 0 なら顔検出を使わない（従来どおりの動作）
 uniform float u_faceFlip;    // 鏡像表示のときは左右を合わせる
 uniform float u_zoom;        // デジタルズーム。顔マスクの参照位置を映像に合わせるのに使う
-
-// ---- グルメ用 ----
-uniform float u_clarity;     // 質感の強調 0..1（肌とは逆に、細かい凹凸を足す）
-uniform float u_vibrance;    // 鮮やかさ  -1..1（くすんだ色ほど強く効く）
-uniform sampler2D u_bokehTex;// ポートレート用に強くぼかした画
-uniform float u_bokeh;       // ぼかしの強さ 0..1（0 でポートレート無効）
-uniform vec2  u_focus;       // ピントを合わせる位置（出力画像の座標 0..1）
-uniform float u_focusR;      // くっきり残す範囲の半径（画像の高さ基準）
-uniform float u_aspect;      // 出力の横÷縦。ぼかしの範囲を真円にするのに使う
 out vec4 fragColor;
 ${SKIN_GLSL}
 // 持ち上げの上限（明るさ）。これが無いと鼻の穴や口の線まで浮く。
@@ -320,21 +311,6 @@ void main() {
   float lack = clamp((bLen - length(chroma)) / max(bLen, 0.05), 0.0, 1.0);
   col = vec3(yc) + mix(chroma, bChroma, clamp(u_even, 0.0, 1.0) * guard * lack);
 
-  // ---- グルメ: 質感 ----
-  // 肌では細かい凹凸を「減らして」なめらかにしたが、料理は逆に「足して」質感を立てる。
-  // 焼き目・衣・麺の表情が出る。範囲は画面全体（肌マスクは使わない）。
-  col += detail * u_clarity * 1.6;
-
-  // ---- グルメ: ポートレート ----
-  // 奥行きの情報は Web からは取れないので、ピント位置からの距離でぼかす。
-  // 料理は中央に置くことが多いので、これで iPhone のポートレートに近い見た目になる。
-  if (u_bokeh > 0.001) {
-    vec3 soft = texture(u_bokehTex, v_uv).rgb;
-    vec2 d = (v_uv - u_focus) * vec2(u_aspect, 1.0);
-    float b = smoothstep(u_focusR, u_focusR + 0.38, length(d));
-    col = mix(col, soft, b * clamp(u_bokeh, 0.0, 1.0));
-  }
-
   // 肌だけを明るく（くすみ抜き）
   col += vec3(u_skinTone * 0.14) * mask;
 
@@ -349,16 +325,6 @@ void main() {
   // 色温度：暖かく＝赤を上げ青を下げる
   col.r += u_warmth * 0.05;
   col.b -= u_warmth * 0.05;
-
-  // ---- グルメ: 鮮やかさ ----
-  // 普通の彩度だとトマトやサーモンの赤が先に飛んで不自然になる。
-  // すでに鮮やかな色には弱く、くすんだ色ほど強く効かせる。
-  if (abs(u_vibrance) > 0.001) {
-    float mx = max(col.r, max(col.g, col.b));
-    float mn = min(col.r, min(col.g, col.b));
-    float amt = u_vibrance * (1.0 - clamp((mx - mn) * 1.6, 0.0, 1.0));
-    col = mix(vec3(luma(col)), col, 1.0 + amt);
-  }
 
   // 色味フィルターは最後。肌の補正が終わった画に対して全体の色を決める。
   col = applyLook(clamp(col, 0.0, 1.0), u_look, u_lookAmount);
