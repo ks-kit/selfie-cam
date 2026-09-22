@@ -369,6 +369,8 @@ async function capture() {
 //             保存先の Download フォルダはギャラリーからも見える。
 const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
   (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+// CSS から iPhone だけに出す案内（横画面の保存方法）を切り分けるため
+document.documentElement.classList.toggle('ios', IS_IOS);
 
 // 写真を端末に残す。戻り値は 'ok' | 'cancel' | 'blocked'。
 //

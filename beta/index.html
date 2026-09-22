@@ -141,6 +141,9 @@
   <div id="preview" class="overlay hidden">
     <div class="pv-head">
       <button id="btn-back">← 撮り直す</button>
+      <!-- iPhone の横画面だけ出す。共有シートは横だと「画像を保存」がスクロールしないと出ないため、
+           写真の長押しメニュー（「写真に追加」）で保存する方を案内する -->
+      <span id="pv-hint">写真を長押し →「写真に追加」で保存</span>
       <button id="btn-zoom">等倍で見る</button>
     </div>
     <div id="pv-scroll"><img id="pv-img" alt="撮影結果"></div>
