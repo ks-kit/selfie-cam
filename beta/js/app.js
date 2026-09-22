@@ -404,7 +404,13 @@ async function storeShot() {
 async function save() {
   if (!state.shot) return;
   const r = await storeShot();
-  if (r === 'ok' && !IS_IOS) toast('Download フォルダに保存しました');
+  if (r === 'ok') {
+    toast(IS_IOS ? '保存しました' : 'Download フォルダに保存しました');
+    // 保存できたら撮影に戻す。次の一枚をすぐ撮れるように。
+    // iOS の共有シートは「画像を保存」以外（LINE で送る等）でも 'ok' になるが、
+    // どれでも写真の用は済んでいるので戻してよい。やめた（cancel）ときは残す。
+    closePreview();
+  }
   if (r === 'blocked') {
     // 最後の手段：新しいタブで開いて長押し保存
     window.open(state.shot.url, '_blank');
@@ -677,10 +683,11 @@ el.btnFlip.addEventListener('click', () => {
 });
 el.selRes.addEventListener('change', () => { if (state.running) startCamera(); });
 
-el.btnBack.addEventListener('click', () => {
+function closePreview() {
   el.preview.classList.add('hidden');
   if (state.shot) showThumb(state.shot.url);   // 戻ったら数え直す
-});
+}
+el.btnBack.addEventListener('click', closePreview);
 el.btnZoom.addEventListener('click', () => {
   const actual = el.pvScroll.classList.toggle('actual');
   el.btnZoom.textContent = actual ? '画面に合わせる' : '等倍で見る';
