@@ -6,7 +6,7 @@
 // オフラインでも起動できるよう、取得に成功したものは都度キャッシュへ写す。
 
 const CACHE_PREFIX = 'selfie-cam-v';
-const CACHE = CACHE_PREFIX + '26';
+const CACHE = CACHE_PREFIX + '27';
 
 const PRECACHE = [
   './',
